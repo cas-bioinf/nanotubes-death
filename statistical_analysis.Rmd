@@ -1,0 +1,547 @@
+---
+title: "Nanotube - deaths, Statistical analysis"
+output: 
+  html_notebook:
+    code_folding: hide
+---
+
+```{r setup, message=FALSE,warning=FALSE}
+library(tidyverse)
+library(readxl)
+library(rstanarm)
+library(cowplot)
+
+theme_set(theme_cowplot())
+options(mc.cores = parallel::detectCores())
+```
+
+TODO: podil NTs from dead cells in Ampicilin vs. GLG, P-GLG (2c/b vs. Fig S7)
+
+# Figure 1
+
+The counts of cells on various cell sections. 
+
+```{r}
+nt_counts_location_wt <- c("poles" = 75, "septal" = 16, "sides" = 9)
+print(nt_counts_location_wt)
+```
+
+```{r}
+sh1 <-  1 + nt_counts_location_wt["poles"]
+sh2 <-  1 + nt_counts_location_wt["septal"] + nt_counts_location_wt["sides"]
+posterior_poles <- qbeta(p = c(0.0005,0.9995), sh1,  sh2)
+CI_poles <- paste(scales::percent(posterior_poles), collapse = ", ")
+
+p_poles_lt50 <- pbeta(0.5, sh1, sh2)
+```
+
+Supposing the distribution of NTs over the surface of the cell is uniform, the 99.9% posterior CI for the proportion of the cell surface occupied by poles is (`r CI_poles`). Alternatively we have $p = `r p_poles_lt50`$ for the hypothesis of uniformity if poles cover < 50% of the cell surface (which they clearly do).
+
+**Suggested wording for paper:** "The positions of NT attachment to the rod-shaped cells were not random ... (Fig. 1c, p < 0.001)"
+
+## Figure 2
+
+Checking the data was loaded correctly (recreating Fig 2 except for normalizing NT counts to number of cells in the group)
+
+```{r}
+read_cell_count_data <- function(file, sheet, prefix) {
+  readxl::read_excel(file, sheet = sheet, range = "F1:V4", 
+                          col_types = c("text", rep(c("numeric", "skip"), times = 8))) %>%
+    rename(Replicate = 1) %>%
+    pivot_longer(starts_with(prefix), names_prefix = prefix, names_sep = " t=", names_to = c("category", "time"), values_to = "count") %>%
+    mutate(alive = grepl("live", category), 
+           alive_string = if_else(alive, "Live", "Dead"),
+           type = if_else(grepl("NTs", category), "NTs", "cells"),
+           category = factor(category, levels = c("live cells", "dying cells", "live cells NTs", "dying cells NTs" ))
+           )
+}
+
+glg <- read_cell_count_data("Fig.2 chart b", prefix = "Wt ", file = "Fig. 2_Primary data_OB.xlsx") %>% mutate(condition = "GLG")
+p_glg <- read_cell_count_data("Fig.2 chart c", prefix = "Wt ", file = "Fig. 2_Primary data_OB.xlsx") %>% mutate(condition = "P-GLG")
+
+glg %>% ggplot(aes(x = category, y = count, fill = time)) + geom_bar(stat = "identity", position = position_dodge()) + ggtitle("GLG")
+
+p_glg %>% ggplot(aes(x = category, y = count, fill = time)) + geom_bar(stat = "identity", position = position_dodge()) + ggtitle("P-GLG")
+
+fig2_data <- rbind(glg, p_glg)
+
+```
+
+
+### Are there more dead cells in P-GLG than in GLG?
+
+```{r}
+fit_fig2_dead <- fig2_data %>% filter(type == "cells") %>% 
+  select(-category, -alive) %>%
+  pivot_wider(names_from = alive_string, values_from = count) %>%
+  glm(cbind(Live, Dead) ~ condition * time, family = "binomial", data = .)
+
+summary(fit_fig2_dead)
+```
+
+Yes. There are significantly more dead cells in the P-GLG (across both times) and at later time (across both conditions) - the `conditionP-GLG` and `time25` rows above. The interaction (`conditionP-GLG:time25`) is not significant so we can't be sure whether the number of dead cells increases faster over time in P-GLG or GLG.
+
+### Does P-GLG show more total NTs than GLG?
+
+```{r}
+fig2_data_NT <- fig2_data %>% 
+  select(-alive, -alive_string, -type) %>%
+  pivot_wider(names_from = category, values_from = count) %>%
+  mutate(total_cells = `live cells` + `dying cells`,
+         total_NTs = `live cells NTs` + `dying cells NTs`)
+
+fit_fig2_NT <- fig2_data_NT %>%
+  glm(cbind(total_NTs, total_cells - total_NTs) ~ condition * time, family = "binomial", data = .)
+
+summary(fit_fig2_NT)
+```
+
+Fitting the full model with interaction turns out to be problematic because for the GLG at t = 0 we only see 0 NTs and the model becomes not well identified. There are multiple alternative approaches, first we can simply add 1 cell with NT to all conditions (note that this should reduce the between group differences):
+
+```{r}
+fit_fig2_NT_p1 <- fig2_data_NT %>%
+  glm(cbind(total_NTs + 1, total_cells - total_NTs + 1) ~ condition * time, family = "binomial", data = .)
+
+summary(fit_fig2_NT_p1)
+```
+
+This leaves us with significant difference for the P-GLG condition. Alternatively, we can fit a fully Bayesian model with mild regularization using RStanArm.
+
+```{r}
+fit_fig2_NT_stan <- fig2_data_NT %>%
+  rstanarm::stan_glm(cbind(total_NTs, total_cells - total_NTs) ~ condition * time, family = "binomial", data = ., 
+                     prior_intercept = normal(0,10), prior = normal(0,5),
+                     warmup = 1000, iter = 6000) # Large number of iterations to accurately sample tails of the distributions
+
+summary(fit_fig2_NT_stan, probs = c(0.005,0.025, 0.975,0.995))
+```
+
+In this scenario, the 99% posterior credible interval (from 0.5% to 99.5%) for `conditionP-GLG` excludes 0, which is similar to p < 0.01 in the frequentist context. Similarly for the effect of time, but as in the previous case, we don't get definitive answer whether the increase in NTs over time is different between the two conditions.
+
+We can also look solely at the t=25 time point:
+
+```{r}
+fit_fig2_NT_25 <- fig2_data_NT %>%
+  filter(time == "25") %>%
+  glm(cbind(total_NTs, total_cells - total_NTs) ~ condition, family = "binomial", data = .)
+
+summary(fit_fig2_NT_25)
+```
+
+Where the difference is very strong.
+
+### Do dead cells produce more NTs in P-GLG than in GLG?
+
+
+```{r}
+fig2_data_NT_dead <-  fig2_data %>% filter(!alive) %>% 
+  select(-category) %>%
+  pivot_wider(names_from = type, values_from = count)
+
+fit_fig2_NT_dead <- fig2_data_NT_dead  %>%
+  glm(cbind(NTs, cells - NTs) ~ condition * time, family = "binomial", data = .)
+
+summary(fit_fig2_NT_dead)
+```
+
+Here we have the same problem as in the previous case and need to regularize/fit smaller model. Starting with adding 1 NT to all conditions:
+
+```{r}
+fit_fig2_NT_dead_p1 <- fig2_data_NT_dead  %>%
+  glm(cbind(NTs + 1, cells - NTs + 1) ~ condition * time, family = "binomial", data = .)
+
+summary(fit_fig2_NT_dead_p1)
+```
+
+This is also inconclusive. So we'll look only at t = 25:
+
+```{r}
+fit_fig2_NT_dead_25 <- fig2_data_NT_dead  %>%
+  filter(time == "25") %>% 
+  glm(cbind(NTs, cells - NTs) ~ condition, family = "binomial", data = .)
+
+summary(fit_fig2_NT_dead_25)
+```
+
+Even after this restriction, the data are not conclusive (p > 0.1). We therefore cannot be sure if dead cells produce NTs at higher _rate_ in the P-GLG condition than in the GLG condition. (We are not running the RStanArm model here as even if it contradicted the results here, it would not still lead to strong evidence for the statement).
+
+### Summary
+
+There is good evidence that there are more dead cells and more cells with NTs in the P-GLG condition, but it is not clear whether a single dead cell is more likely to have NTs in the P-GLGL condition.
+
+**Suggested wording for the paper:** "Moreover, the P-GLG method resulted in larger amounts of dead cells and NTs than the GLG method (Supplementary Data Fig. 4a, p < 0.001 and p = 0.04 respectively)"
+
+## Frequency of NT formation in $\Delta sigD$
+
+Recreating Fig S5 a (without normalizing NT count wrt. number of cells)
+
+```{r}
+sigD_data <- read_cell_count_data(file = "Fig. S5_Primary data_OB.xlsx", sheet = "Fig S5 chart a" , prefix = "SigD ") %>%
+  mutate(condition = "-SigD P-GLG")
+sigD_data %>% ggplot(aes(x = category, y = count, fill = time)) + geom_bar(stat = "identity", position = position_dodge()) + ggtitle("-SigD P-GLG")
+
+```
+
+Is the the frequency of NT formation in ΔsigD (at 90 min)  lower than in wt (at 25 min)? (both at P-GLG)
+
+```{r}
+wt_sigD_data <- 
+  rbind(sigD_data, p_glg) %>%
+  mutate(condition = factor(condition, levels = c("P-GLG","-SigD P-GLG"))) %>%
+  filter(time != "0") %>%
+  select(-alive, -alive_string, - type) %>% 
+  pivot_wider(names_from = category, values_from = count) %>%
+  mutate(total_cells = `live cells` + `dying cells`,
+         total_NTs = `live cells NTs` + `dying cells NTs`)
+
+```
+
+
+```{r}
+wt_sigD_data %>% group_by(condition) %>% summarise(ratio_NT_all = sum(total_NTs) / sum(total_cells), ratio_NT_dead = sum(`dying cells NTs`) / sum(`dying cells`))
+```
+
+First, let's look at the proportion of NTs across all cells:
+
+```{r}
+fit_wt_sigD_NT <- wt_sigD_data %>%
+  glm(cbind(total_NTs, total_cells) ~ condition, family = "binomial", data = .)
+
+summary(fit_wt_sigD_NT)
+```
+
+Significantly lower rate in $\Delta sigD$
+
+Now let's look at the proportion of NTs in dead cells only:
+
+```{r}
+fit_wt_sigD_NT_dead <- wt_sigD_data %>%
+  glm(cbind(`dying cells NTs`, `dying cells`) ~ condition, family = "binomial", data = .)
+
+summary(fit_wt_sigD_NT_dead)
+```
+
+If we look at the dead cells only, we also have significantly lower rate in $\Delta sigD$
+
+**Suggested wording for the paper:** "However, the frequency of NT formation in ΔsigD (at 90 min) appeared to be lower than in wt P-GLG (at 25 min) (Supplementary Data Fig. 5a, p < 0.001)."
+
+## Figure 4b
+
+Loading the data and checking that I can reproduce the figures.
+
+We replace 0 transformations with 1s to avoid taking the log of 0.
+
+
+```{r}
+read_fig4_subset <- function(range, condition) {
+  readxl::read_excel("Fig. 4_Primary data_OB.xlsx", sheet = "Fig.4 chart b", range = range,
+                     col_types = c("text", "numeric", "skip","numeric", "skip", "numeric"), 
+                     col_names = c("replicate", "baseline", "dnase", "recipients")) %>% 
+    mutate(condition = condition)
+  
+}
+
+fig4_data <- rbind(
+  read_fig4_subset("A8:F10", "wt"),
+  read_fig4_subset("L8:Q10", "-sigD"),
+  read_fig4_subset("W8:AB10", "Phs-comK"),
+  read_fig4_subset("AH8:AM10", "-comK")
+) %>% 
+  pivot_longer(cols = c("baseline", "dnase"), names_to = "dnase", values_to = "transformations") %>%
+  mutate(
+    transformations = if_else(transformations == 0, 1, transformations),
+    recipients_100 = recipients / 100, ratio = transformations / recipients, ratio_100 = transformations / recipients_100, condition = factor(condition, levels = c("wt","-sigD","Phs-comK", "-comK") ))
+
+fig4_data %>% filter(dnase == "baseline")  %>% ggplot(aes(x = condition, y = ratio_100)) + geom_point(color = "gray", position = position_jitter(width = 0.3)) + stat_summary() + scale_y_log10()
+
+# fig4_data %>% filter(dnase == "baseline") %>% 
+#   group_by(condition) %>% 
+#   summarise(mean_ratio = mean(ratio_100), sd_ratio = sd(ratio_100)) %>%
+#   ggplot(aes(x = condition, y = mean_ratio, ymin = mean_ratio - sd_ratio, ymax = mean_ratio + sd_ratio)) + geom_linerange() + geom_point(stat = "identity") + scale_y_log10()
+```
+
+
+```{r}
+fit_fig4_all <- fig4_data %>%
+  mutate() %>%
+  lm(log(ratio_100) ~ condition * dnase, data = .)
+
+TukeyHSD(aov(fit_fig4_all))
+```
+
+All interesting pairwise comparisons are significant even after adjustments for multiple testing. The exceptions are:
+
+- The Dnase+  conditions are not meaningfully different from each other
+- The `-comK` condition is not meaningfully different from the `dnase+` conditions
+
+
+
+**Suggested wording:** All differences between dnase- and dnase+ conditions in wt, $\Delta sigD$ and Phs-comK are statistically significant as well as all pairwise differences between the dnase- conditions (all p < 0.001).
+
+
+
+## Figure 4c
+
+```{r}
+data_fig4c <- readxl::read_excel("Fig. 4_Primary data_OB.xlsx", sheet = "Fig.4 chart c", range = "C2:G4",
+                                 col_names = c("replicate","wt","-sigD", "Phs-comK", "-comK")) %>%
+  pivot_longer(!one_of("replicate"), names_to = "condition", values_to = "relative_expression") %>%
+  mutate(condition = factor(condition, levels = c("wt","-sigD","Phs-comK", "-comK") ))
+  
+
+data_fig4c %>% ggplot(aes(x = condition, y = relative_expression)) + stat_summary() + scale_y_log10()
+
+```
+
+```{r}
+fit_fig4c <- data_fig4c %>% 
+  lm(log(relative_expression / 100) ~ condition, data = .)
+
+summary(fit_fig4c)
+TukeyHSD(aov(fit_fig4c))
+```
+
+Except for the "$\Delta sigD$ vs. wt" pair, all conditions are statistically significantly different from each other at p < 0.001. 
+
+**Suggested wording for figure legend:** "The difference between wt and $\Delta sigD$ is not significant, all other pairwise differences are significant (all p < 0.001)"
+
+## Correlation between $comK$ expression and plasmid transfer
+
+Replacing 0s in the transformation data for comK with 1/number of recipients to avoid taking the log of 0.
+
+```{r}
+data_cor <- data_fig4c %>% inner_join(fig4_data %>% filter(dnase == "baseline"), by = c("condition", "replicate")) %>%
+  mutate(ratio = if_else(condition == "-comK", 1 / recipients, ratio)) %>%
+  mutate(log_ratio = log10(ratio), log_expression = log(relative_expression))
+
+data_cor %>% 
+  ggplot(aes(x = relative_expression, y = log10(ratio), shape = condition, color = condition, group = 1)) + geom_smooth(method = "lm")+ geom_point(size = 2) + scale_x_log10("Relative comK expression") + scale_y_continuous("Log10(Ratio transformable)")
+```
+
+```{r}
+fit_cor <- lm(log_ratio ~ log_expression, data = data_cor)
+
+cor_test_result <- cor.test(data_cor$log_ratio, data_cor$log_expression)
+
+cor_test_result
+
+cor_confint <- cor_test_result$conf.int
+```
+
+**Suggested wording for the manuscript:** "the transfer was quantitatively correlated with the expression of the comK gene (Fig. 4c, p < 0.001, Pearson's correlation 95% CI = (`r round(cor_confint, 2)`)). 
+
+
+## Figure S7
+
+Load data and check that I can reproduce the figure:
+
+```{r}
+S7_read_single_receptive_field <- function(sheet, row, column) {
+  file <- "Fig.S7_Primary data_OB.xlsx"
+  
+  col_num_to_letter <- function(x) {
+    if(x > 26) {
+      if(x > 26*26) {
+        print(x)
+        stop("Not implemented")
+      }
+      paste0(c(LETTERS[floor((x - 1) / 26)], LETTERS[((x - 1) %% 26) + 1]), collapse = "")
+    } else {
+      LETTERS[x]
+    }
+  }
+  
+  to_range <- function(start_col_num, start_row, end_col_num, end_row) {
+    paste0(c(col_num_to_letter(start_col_num), start_row,":",col_num_to_letter(end_col_num), end_row), collapse = "")
+  }
+  
+  cols_per_field <- 6
+  start_col_num <- (column - 1) * cols_per_field + 1
+  end_col_num <- start_col_num + cols_per_field - 1
+  
+  rows_per_field <- 7
+  start_row <- (row - 1) * rows_per_field + 1
+  end_row <- start_row + rows_per_field - 1
+  
+  range_title <- to_range(start_col_num, start_row, start_col_num, start_row + 2)
+  
+  title_data <- readxl::read_excel(file, sheet = sheet, range = range_title, col_names = "data")
+  condition <- title_data$data[1]
+  replicate_field <- title_data$data[2]
+  replicate_field_split <- str_split(replicate_field, " ", simplify = TRUE)
+  replicate <- replicate_field_split[1]
+  field <- replicate_field_split[3]
+  
+  main_range <- to_range(start_col_num, start_row + 3,end_col_num, end_row)
+  
+  readxl::read_excel(file, sheet = sheet, range = main_range, col_names = c("category", "modifier", paste0("time", c(0, 30, 60, 90))),
+                     col_types = c("text", "text", rep("numeric", 4))) %>%
+    pivot_longer(starts_with("time"), names_to = "time", names_prefix = "time", values_to = "count") %>%
+    mutate(category = paste(trimws(category), trimws(replace_na(modifier, ""))), condition = condition, field = field, replicate = replicate) %>% 
+    select(-modifier)
+}
+
+S7_read_all_receptive_fields <- function(sheet, fields_per_row) {
+  if(length(fields_per_row) != 3) {
+    stop("Expected three rows")
+  }
+  res <- list()
+  next_id <- 1
+  for(row in 1:length(fields_per_row)) {
+    for(field in 1:fields_per_row[row]) {
+      res[[next_id]] <- S7_read_single_receptive_field(sheet, row, field)
+      next_id <- next_id + 1
+    }
+  }
+  do.call(rbind, res)  
+}
+
+data_S7 <- rbind(
+  S7_read_all_receptive_fields("Fig.S7 chart Ab", c(3,3,3)),
+  S7_read_all_receptive_fields("Fig.S7 chart Bb", c(5,5,5)),
+  S7_read_all_receptive_fields("Fig.S7 chart Cb", c(2,2,2)),
+  S7_read_all_receptive_fields("Fig.S7 chart Db", c(3,2,2))
+)  %>%
+  mutate(category = factor(trimws(category), levels = c("Live cells", "Dying cells", "Live cells NTs", "Dying cells NTs"), labels = c("live cells", "dying cells", "live cells NTs", "dying cells NTs" )))
+```
+
+
+```{r}
+data_S7 %>% group_by(category, condition, time) %>%
+  summarise(total_count = sum(count)) %>%
+  group_by(condition, time) %>%
+  mutate(
+    count_live = if_else(category == "live cells", total_count, 0),
+    count_dead = if_else(category == "dying cells", total_count, 0),
+    relative_count = total_count / (sum(count_live) + sum(count_dead))) %>%
+  ggplot(aes(x = category, fill = time, y = relative_count)) + geom_bar(stat = "identity", position = position_dodge()) + facet_wrap(~condition) + theme(axis.text.x = element_text(angle = 90, vjust = 0.1))
+```
+
+
+### Do Amicilin treated cells produce less NTs than p-GLG? Lets look at total NTs first:
+
+```{r}
+#ampicilin_t_90 <- tibble(Replicate = "All", `live cells` = 0, `live cells NTs` = 0, `dying cells` = 614, `dying cells NTs` = 23, condition = "Ampicilin")
+ampicilin_t_90 <- data_S7 %>% filter(time == "90", condition == "Amp500") %>% mutate(condition = "Ampicilin", Replicate = paste0(replicate, field)) %>% select(-field, -replicate, -time) 
+
+p_glg_t_25 <- p_glg %>% filter(time == "25") %>%
+  select(-alive, -time, -type, -alive_string) %>%
+  mutate(condition = "P-GLG")
+
+
+
+data_fig8 <- rbind(ampicilin_t_90, p_glg_t_25) %>%
+  pivot_wider(names_from = "category", values_from = "count") %>%
+  mutate(condition = factor(condition, levels = c("P-GLG", "Ampicilin"))) %>%
+  mutate(total_cells = `live cells` + `dying cells`,
+         total_NTs = `live cells NTs` + `dying cells NTs`) 
+
+fit_fig8_NT <- data_fig8 %>%
+  glm(cbind(total_NTs, total_cells - total_NTs) ~ condition, family = "binomial", data = .)
+
+summary(fit_fig8_NT)
+```
+
+Significnat. And now NTs relative to dying cells.
+
+```{r}
+fit_fig8_NT_dead <- data_fig8 %>%
+  glm(cbind(`dying cells NTs`, `dying cells` - `dying cells NTs`) ~ condition, family = "binomial", data = .)
+
+summary(fit_fig8_NT_dead)
+```
+
+Also significant.
+
+**Suggested wording for the paper:** "led to death of majority of the cells and induced NT formation from dead cells although not as frequently as the P-GLG method (Supplementary Data Fig. 7b, p < 0.001). "
+
+
+### Do number of dead cells change over time?
+
+Here, we treat time as continous, i.e. we test the overall _trend_ over time, not the difference between individual time points.
+
+```{r}
+data_s7_model <- data_S7 %>%
+  pivot_wider(names_from = "category", values_from = "count") %>%
+  mutate(total_cells = `live cells` + `dying cells`,
+  total_NTs = `live cells NTs` + `dying cells NTs`,
+  time_num = as.numeric(time) / 30)
+
+```
+
+First, let's look at the number of dead cells for each condition:
+
+```{r}
+for(condition_to_test in unique(data_s7_model$condition)) {
+  cat("================================\n\n Condition :", condition_to_test, "\n================================\n\n")
+  fit_s7_time_dead <- data_s7_model %>%
+    filter(condition == condition_to_test) %>%
+    glm(cbind(`dying cells`, total_cells) ~  time_num, family = "binomial", data = .)
+
+  print(summary(fit_s7_time_dead))
+}
+```
+
+We see significant changes in number of dead cells over time for all but the EmptyLB (no antibiotic) condition. The EmptyLB condition is consistent with no change, but we also cannot rule out even relatively big changes (e.g., comparable to those in Ampicilin condition).
+
+### Do number of total NTs change over time
+
+Now let's look at the number of total NTs. We don't test the EmptyLB (no antibiotic condition) as it has 0 NTs at all time points.
+
+```{r}
+for(condition_to_test in setdiff(unique(data_s7_model$condition), "Empty LB")) {
+  cat("\n================================\n\n Condition :", condition_to_test, "\n================================\n\n")
+  fit_s7_time_NT <- data_s7_model %>%
+    filter(condition == condition_to_test) %>%
+    glm(cbind(total_NTs, total_cells - total_NTs) ~ time_num, family = "binomial", data = .)
+  
+  print(summary(fit_s7_time_NT))
+}
+```
+
+We see that the Cm fit is problematic due to large number of zeroes, so we reinvestigate the Cm condition with regularization by adding 1 to all cells and with RStanArm.
+
+First with adding 1:
+
+```{r}
+fit_s7_cm_time_NT_1 <- data_s7_model %>%
+  filter(condition == "Cm5") %>%
+  glm(cbind(total_NTs + 1, total_cells - total_NTs + 1) ~ time_num, family = "binomial", data = .)
+
+summary(fit_s7_cm_time_NT_1)
+```
+
+Then the same with RStanArm and weakly regularizing priors:
+
+```{r}
+fit_s7_cm_time_NT_stan <-  data_s7_model %>%
+  filter(condition == "Cm5") %>%
+  rstanarm::stan_glm(cbind(total_NTs, total_cells - total_NTs) ~ time_num, family = "binomial", data = ., 
+                   prior_intercept = normal(0,10), prior = normal(0,5),
+                   warmup = 1000, iter = 6000) # Large number of iterations to accurately sample tails of the distributions
+
+summary(fit_s7_cm_time_NT_stan, probs = c(0.005,0.025, 0.975,0.995))
+```
+
+Both regularized fits don't show significant change, but also cannot rule out non-negligible effect.
+
+
+**Suggested wording for the paper:** " even though chloramphenicol is bacteriostatic, the concentration used did result in some dead cells with NTs at 90 min (Supplementary Data Fig. 7c, not significant). A similar result was also obtained using the RNAP-targeting rifampicin (p = 0.01)"
+
+**Suggested wording for figure legend:** "The time trend of the number of dead cells is statistically significant for all antibiotic conditions (all p < 0.001). Time trend of the number of NTs is statistically significant for Ampicilin (p < 0.001) and Rifampicin (p = 0.01).
+
+## Figure S8
+
+Does the distribution of NTs differ between the wt and ampicilin-treated?
+
+```{r}
+nt_counts_location_ampicilin <- c("poles" = 0, "septal" = 6, "sides" = 16)
+print(nt_counts_location_wt)
+```
+
+```{r}
+chisq.test(rbind(nt_counts_location_wt, nt_counts_location_ampicilin), simulate.p.value = TRUE, B = 20000)
+```
+
+**Suggested wording:** "The distribution of NTs is notably different from that of wild type (p < 0.001)."
+
