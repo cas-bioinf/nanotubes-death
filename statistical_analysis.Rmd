@@ -1,10 +1,10 @@
 ---
 title: "Supplementary Statistical Analysis"
 output:
+  word_document:
+    toc: yes
   html_document:
     code_folding: hide
-    toc: yes
-  word_document:
     toc: yes
 abstract: |+
   This document contains the supplementary statistical analysis for the paper "Bacterial nanotubes are a manifestation of cell death". The analysis is presented in the same order as the claims/figures in the main paper. All code can be accessed from this document or at https://github.com/cas-bioinf/nanotubes-death
@@ -46,7 +46,7 @@ nt_counts_location_wt <- c("poles" = 75, "septal" = 16, "sides" = 9)
 print(nt_counts_location_wt)
 ```
 
-We will take advantage of the fact that given a uniform prior distribution for the probability of a binary outcome, the  posterior distribution after observing $n$ successes and $k$ failures is $Beta(n + 1, k + 1)$. This also coincides with a frequentist confidence interval.
+We will take advantage of the fact that given a uniform prior distribution for the probability of a binary outcome, the  posterior distribution after observing $n$ successes and $k$ failures is $Beta(n + 1, k + 1)$. Quantiles of this distrubition also let us construct a frequentist confidence interval for the proportion.
 
 ```{r}
 sh1 <-  1 + nt_counts_location_wt["poles"]
