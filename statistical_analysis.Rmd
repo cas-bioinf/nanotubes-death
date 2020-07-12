@@ -1,16 +1,30 @@
 ---
 title: "Supplementary Statistical Analysis"
 output:
-  word_document:
-    toc: yes
   html_document:
     code_folding: hide
+    toc: yes
+  word_document:
     toc: yes
 abstract: |+
   This document contains the supplementary statistical analysis for the paper "Bacterial nanotubes are a manifestation of cell death". The analysis is presented in the same order as the claims/figures in the main paper. All code can be accessed from this document or at https://github.com/cas-bioinf/nanotubes-death
 ---
 
+```{r setup_echo, echo = FALSE}
+document_output <- (isTRUE(getOption('knitr.in.progress')) &&
+                            ("word_document" %in% rmarkdown::all_output_formats(knitr::current_input()) ||
+                               "pdf_document" %in% rmarkdown::all_output_formats(knitr::current_input())) )
+
+if(document_output) {
+  knitr::opts_chunk$set(echo = FALSE)
+}
+
+```
+
+
 ```{r setup, message=FALSE,warning=FALSE}
+
+
 library(tidyverse)
 library(readxl)
 library(rstanarm)
@@ -47,7 +61,7 @@ Supposing the distribution of NTs over the surface of the cell is uniform, given
 
 # Figure 2 - GLG vs. P-GLG
 
-Checking the data was loaded correctly (recreating Fig 2b,c):
+Checking the data was loaded correctly (recreating Fig 2b, c):
 
 ```{r}
 read_cell_count_data <- function(file, sheet, prefix) {
@@ -138,7 +152,7 @@ summary(fit_fig2_NT_p1)
 
 This leaves us with significant difference for the P-GLG condition. Alternatively, we can fit a fully Bayesian model with mild regularization using RStanArm.
 
-```{r, message=FALSE, results = "hide"}
+```{r, message=FALSE, results = "hide", cache = TRUE}
 fit_fig2_NT_stan <- fig2_data_NT %>%
   rstanarm::stan_glm(cbind(total_NTs, total_cells - total_NTs) ~ condition * time, family = "binomial", data = ., 
                      prior_intercept = normal(0,10), prior = normal(0,5),
@@ -697,7 +711,7 @@ summary(fit_s8_12_time_dead_amp_reg)
 
 To be safe, also check with RStanArm:
 
-```{r, message =FALSE, results="hide"}
+```{r, message =FALSE, results="hide", cache = TRUE}
 fit_s8_12_time_dead_amp_stan <-  data_s8_12_model %>%
   filter(condition == "Amp500") %>%
   rstanarm::stan_glm(cbind(total_cells - `dying cells`, `dying cells`) ~ time_num, family = "binomial", data = ., 
