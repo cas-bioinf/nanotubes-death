@@ -6,6 +6,8 @@ output:
   html_document:
     code_folding: hide
     toc: yes
+  pdf_document:
+    toc: yes
 abstract: |+
   This document contains the supplementary statistical analysis for the paper "Bacterial nanotubes are a manifestation of cell death". The analysis is presented in the same order as the claims/figures in the main paper. All code can be accessed from this document or at https://github.com/cas-bioinf/nanotubes-death
 ---
@@ -18,6 +20,8 @@ document_output <- (isTRUE(getOption('knitr.in.progress')) &&
 if(document_output) {
   knitr::opts_chunk$set(echo = FALSE)
 }
+
+redo_plots <- FALSE # Set to TRUE to recreate variants of all the figures (originally used to check that the data was loaded correctly)
 
 ```
 
@@ -35,7 +39,74 @@ theme_set(theme_cowplot())
 options(mc.cores = parallel::detectCores())
 ```
 
-Similarly, to the paper, we will abbreviate nanotubes as NTs. In each section, we show the relevant data either as a table or in a plot and then follow to perform the statistical analysis.
+# Figure S1l - NTs under SEM in varying genetic background
+
+```{r}
+read_single_sem_quantification <- function(sheet, replicate,  range, condition, file = "FigS1L_Sigmas KOs SEM quantification.xlsx", space = FALSE) {
+  if(space) {
+    col_types = c("numeric","skip", "numeric")
+  } else {
+    col_types = c("numeric","numeric")
+  }
+  read_excel(file, sheet, range = range, col_names = c("Cells","NTs"), col_types = col_types) %>%
+    mutate(condition = condition, replicate = replicate, field = 1:n())
+}
+
+read_condition_sem_quantification <- function(sheet, cols, rows_from, rows_to, condition = paste0("-",sheet), file = "FigS1L_Sigmas KOs SEM quantification.xlsx", space = FALSE) {
+  res <- list()
+  for(i in 1:length(rows_from)) {
+    res[[i]] <- read_single_sem_quantification(file = file, sheet = sheet, replicate = paste0("E",i), range = 
+                                                 paste0(cols[1],rows_from[i],":",cols[2], rows_to[i]), condition = condition,
+                                               space = space)
+  }
+  do.call(rbind, res)
+}
+
+data_S1l <- rbind(
+  read_condition_sem_quantification("SigD", c("G","H"), rows_from = c(2,19,25,28), rows_to = c(4,19,25,29)),
+  read_condition_sem_quantification("SigI", c("H","I"), rows_from = c(2,19,34,50), rows_to = c(4,20,36,51)),
+  read_condition_sem_quantification("7ECF", c("H","I"), rows_from = c(2,19,34), rows_to = c(4,22,34)),
+  read_condition_sem_quantification("SigB", c("H","I"), rows_from = c(2,19), rows_to = c(4,21)),
+  read_condition_sem_quantification("SEM", c("J","K"), condition = "-hag", rows_from = c(2,8,14), rows_to = c(4,11,15), file = "S17d Quantification of NTs in liquid medium.xlsx")
+)  
+
+if(redo_plots) {
+  data_S1l %>% group_by(condition, replicate) %>%
+    summarise(prop_NTs = sum(NTs) / sum(Cells), .groups = "drop") %>%
+    group_by(condition) %>%
+    summarise(petc_NTs_mean = mean(prop_NTs) * 100, perc_NTs_SEM = sd(prop_NTs) / sqrt(n()) * 100, .groups = "drop")
+}
+```
+
+
+To compare the conditions, we will use a binomial generalized linear model. Here, we will treat `condition` (the individual knock-outs performed) as the sole covariate. Cells with NT are treated as success, cells without NTs as failures. Since the $\Delta sigD$ condition has no NTs at all we cannot use the model directly, instead we will try regularizing by adding one success and one failure to each condition and by fitting a Bayesian GLM with weakly informative priors. First the frequentist fit with regularization:
+
+
+```{r}
+data_S1l_fit <- data_S1l %>% mutate(condition = factor(condition, levels = c("-SigD", "-hag","-7ECF","-SigI","-SigB"))) 
+
+fit_S1l_reg <- glm(cbind(NTs + 1, Cells - NTs + 1) ~ condition, data = data_S1l_fit, family = "binomial")
+summary(fit_S1l_reg)
+
+```
+
+Above, we have treated the $\Delta sigD$ condition as baseline. None of the contrasts against $\Delta sigD$ is significant and comparing the estimates to errors, we see that other contrasts also are not significant.
+
+To be sure, also the Bayesian fit:
+
+```{r, message=FALSE, results = "hide", cache = TRUE}
+fit_S1l_stan <- 
+  rstanarm::stan_glm(cbind(NTs, Cells - NTs) ~ condition, family = "binomial", data = data_S1l_fit, 
+                     prior_intercept = normal(0,10), prior = normal(0,5))
+```
+
+```{r}
+summary(fit_S1l_stan, probs = c(0.025, 0.975))
+
+```
+
+Once again, no differences can be deemed significant - however, the data also cannot rule out that the true differences are substantial as witnessed by the wide posterior credible intervals.
+
 
 # Figure 1c - Spatial distribution of NTs
 
@@ -61,8 +132,6 @@ Supposing the distribution of NTs over the surface of the cell is uniform, given
 
 # Figure 2 - GLG vs. P-GLG
 
-Checking the data was loaded correctly (recreating Fig 2b, c):
-
 ```{r}
 read_cell_count_data <- function(file, sheet, prefix) {
   readxl::read_excel(file, sheet = sheet, range = "F1:V4", 
@@ -84,28 +153,32 @@ fig2_data <- rbind(glg, p_glg)
 
 
 ```{r}
-plot_cell_count_data_alive <- function(fig_data, facet = facet_wrap(~condition)) {
-  fig_data %>% filter(type == "cells") %>%
-    select(-category, -type, -alive) %>%
-    pivot_wider(names_from = "alive_string", values_from = "count") %>%
-    mutate(fraction_live = Live / (Live + Dying)) %>%
-    ggplot(aes(x = time, y = fraction_live )) + geom_errorbar(stat = "summary", fun.data = mean_se) + facet + geom_bar(stat = "summary", fun.data = mean_se) + scale_y_continuous(labels = scales::percent, breaks = seq(0,1,by = 0.2))
-}
+# Checking the data was loaded correctly (recreating Fig 2b, c):
 
-## Fig 2b
-plot_cell_count_data_alive(fig2_data)
-
-plot_cell_count_data_NTs <- function(fig_data, facet = facet_wrap(alive_string~condition, nrow = 1)) {
-  fig_data %>% 
-    select(-category, -alive) %>%
-    pivot_wider(names_from = "type", values_from = "count") %>%
-    mutate(fraction_NT = NTs / cells) %>%
-    ggplot(aes(x = time, y = fraction_NT )) + geom_errorbar(stat = "summary", fun.data = mean_se) + facet + geom_bar(stat = "summary", fun.data = mean_se) + scale_y_continuous(labels = scales::percent)
+if(redo_plots) {
+  plot_cell_count_data_alive <- function(fig_data, facet = facet_wrap(~condition)) {
+    fig_data %>% filter(type == "cells") %>%
+      select(-category, -type, -alive) %>%
+      pivot_wider(names_from = "alive_string", values_from = "count") %>%
+      mutate(fraction_live = Live / (Live + Dying)) %>%
+      ggplot(aes(x = time, y = fraction_live )) + geom_errorbar(stat = "summary", fun.data = mean_se) + facet + geom_bar(stat = "summary", fun.data = mean_se) + scale_y_continuous(labels = scales::percent, breaks = seq(0,1,by = 0.2))
+  }
   
+  ## Fig 2b
+  print(plot_cell_count_data_alive(fig2_data))
+  
+  plot_cell_count_data_NTs <- function(fig_data, facet = facet_wrap(alive_string~condition, nrow = 1)) {
+    fig_data %>% 
+      select(-category, -alive) %>%
+      pivot_wider(names_from = "type", values_from = "count") %>%
+      mutate(fraction_NT = NTs / cells) %>%
+      ggplot(aes(x = time, y = fraction_NT )) + geom_errorbar(stat = "summary", fun.data = mean_se) + facet + geom_bar(stat = "summary", fun.data = mean_se) + scale_y_continuous(labels = scales::percent)
+    
+  }
+  
+  ## Fig 2c
+  print(plot_cell_count_data_NTs(fig2_data))
 }
-
-## Fig 2c
-plot_cell_count_data_NTs(fig2_data)
 ```
 
 
@@ -221,19 +294,21 @@ There is good evidence that there are more dead cells and more cells with NTs  i
 
 # Figure S5 a,b - Frequency of NT formation in $\Delta sigD$
 
-Recreate figures S5a,b to check if the data were loaded correctly:
 
 ```{r}
 data_S5ab <- read_cell_count_data("Fig. S5_Primary data_OB.xlsx", sheet = "Fig S5 chart ab", prefix = "SigD ") %>%
   mutate(condition = "-SigD P-GLG")
 
-plot5a <- plot_cell_count_data_alive(data_S5ab, NULL) + expand_limits(y = 1)
-plot5b <- plot_cell_count_data_NTs(data_S5ab, facet_wrap(~alive_string)) + expand_limits(y = 0.1)
-plot5a + plot5b
+#Recreate figures S5a,b to check if the data were loaded correctly:
+if(redo_plots) {
+  plot5a <- plot_cell_count_data_alive(data_S5ab, NULL) + expand_limits(y = 1)
+  plot5b <- plot_cell_count_data_NTs(data_S5ab, facet_wrap(~alive_string)) + expand_limits(y = 0.1)
+  plot5a + plot5b
+}
 ```
 
 
-Is the the frequency of NT formation in $\Delta sigD$ (at 90 min)  lower than in wt (at 25 min)? (both at P-GLG). Let's look at the ratio of cells with NTs among all cells and among dead cells:
+Is the the frequency of NT formation in $\Delta sigD$ (at 90 min)  lower than in wt (at 25 min)? (both at P-GLG). Let us look at the ratio of cells with NTs among all cells and among dead cells:
 
 ```{r}
 wt_sigD_data <- 
@@ -252,7 +327,7 @@ wt_sigD_data <-
 wt_sigD_data %>% group_by(condition) %>% summarise(ratio_NT_all = sum(total_NTs) / sum(total_cells), ratio_NT_dead = sum(`dying cells NTs`) / sum(`dying cells`))
 ```
 
-First, let's look at the proportion of NTs across all cells, ie. cells with NTs are treated as succes while cells without NTs are treated as failures in a binomial generalized linear model:
+First, we examine the proportion of NTs across all cells, ie. cells with NTs are treated as succes while cells without NTs are treated as failures in a binomial generalized linear model:
 
 ```{r}
 fit_wt_sigD_NT <- wt_sigD_data %>%
@@ -323,14 +398,18 @@ With this regularization we can say that dying cells produced signicantly more N
 
 # Figure S5 d,e - Frequency of NT formation in $\Delta lytEF$
 
-Now we will do the same analysis we did for $\Delta sigD$, but using data for $\Delta lytEF$. First, recreate figures S5d,e to check if the data were loaded correctly.
+Now we will do the same analysis we did for $\Delta sigD$, but using data for $\Delta lytEF$. 
 
 ```{r}
+
 data_S5de <- read_cell_count_data("Fig. S5_Primary data_OB.xlsx", sheet = "Fig S5 chart de", prefix = "LytEF ") %>% mutate(condition = "-lytEF P-GLG")
 
-figS5d <- plot_cell_count_data_alive(data_S5de, NULL) + expand_limits(y = 1)
-figS5e <- plot_cell_count_data_NTs(data_S5de, facet_wrap(~alive_string)) 
-figS5d + figS5e
+#Recreate figures S5d,e to check if the data were loaded correctly.
+if(redo_plots) {
+  figS5d <- plot_cell_count_data_alive(data_S5de, NULL) + expand_limits(y = 1)
+  figS5e <- plot_cell_count_data_NTs(data_S5de, facet_wrap(~alive_string)) 
+  figS5d + figS5e
+}
 ```
 
 
@@ -425,8 +504,6 @@ With this regularization we can say that dying cells produced signicantly more N
 
 # Figure 4b - DNase treatments
 
-Loading the data and checking that I can reproduce the figures. We replace conditions having 0 transformations with 1s to avoid taking the log of 0. We also show only the DNAse- conditions (all the DNAse+ conditions have 0 transformations).
-
 
 ```{r}
 read_dnase_subset <- function(file, sheet, range, condition) {
@@ -452,7 +529,12 @@ fig4_data <- rbind(
     transformations = if_else(transformations == 0, 1, transformations),
     recipients_100 = recipients / 100, ratio = transformations / recipients, ratio_100 = transformations / recipients_100, condition = factor(condition, levels = c("wt","-sigD","Phs-comK", "-comK") ))
 
-fig4_data %>% filter(dnase == "baseline")  %>% ggplot(aes(x = condition, y = ratio_100)) + geom_point(color = "gray", position = position_jitter(width = 0.3)) + stat_summary(fun.data = mean_se) + scale_y_log10()
+
+
+# Loading the data and checking that I can reproduce the figures. We replace conditions having 0 transformations with 1s to avoid taking the log of 0. We also show only the DNAse- conditions (all the DNAse+ conditions have 0 transformations).
+if(redo_plots) {
+  fig4_data %>% filter(dnase == "baseline")  %>% ggplot(aes(x = condition, y = ratio_100)) + geom_point(color = "gray", position = position_jitter(width = 0.3)) + stat_summary(fun.data = mean_se) + scale_y_log10()
+}
 
 # fig4_data %>% filter(dnase == "baseline") %>% 
 #   group_by(condition) %>% 
@@ -480,8 +562,6 @@ Otherwise all p < 0.001.
 
 # Figure 4c - $comK$ expression.
 
-First let us reproduce the figure:
-
 ```{r}
 data_fig4c <- readxl::read_excel("Fig. 4_Primary data_OB.xlsx", sheet = "Fig.4 chart c", range = "C2:G4",
                                  col_names = c("replicate","wt","-sigD", "Phs-comK", "-comK")) %>%
@@ -489,7 +569,10 @@ data_fig4c <- readxl::read_excel("Fig. 4_Primary data_OB.xlsx", sheet = "Fig.4 c
   mutate(condition = factor(condition, levels = c("wt","-sigD","Phs-comK", "-comK") ))
   
 
-data_fig4c %>% ggplot(aes(x = condition, y = relative_expression)) + stat_summary(fun.data = mean_se) + scale_y_log10()
+#First let us reproduce the figure:
+if(redo_plots) {
+  data_fig4c %>% ggplot(aes(x = condition, y = relative_expression)) + stat_summary(fun.data = mean_se) + scale_y_log10()
+}
 
 ```
 
@@ -507,7 +590,7 @@ Except for the "$\Delta sigD$ vs. wt" pair, all conditions are statistically sig
 
 # Correlation between $comK$ expression and plasmid transfer
 
-Replacing 0s in the transformation data for comK with 1/number of recipients to avoid taking the log of 0.
+We start by examining the correlation visually, replacing 0s in the transformation data for comK with 1/number of recipients to avoid taking the log of 0.
 
 ```{r}
 data_cor <- data_fig4c %>% inner_join(fig4_data %>% filter(dnase == "baseline"), by = c("condition", "replicate")) %>%
@@ -518,9 +601,9 @@ data_cor %>%
   ggplot(aes(x = relative_expression, y = log10(ratio), shape = condition, color = condition, group = 1)) + geom_smooth(method = "lm")+ geom_point(size = 2) + scale_x_log10("Relative comK expression") + scale_y_continuous("Log10(Ratio transformable)")
 ```
 
-```{r}
-fit_cor <- lm(log_ratio ~ log_expression, data = data_cor)
+Then we run Pearson's correlation test on the data:
 
+```{r}
 cor_test_result <- cor.test(data_cor$log_ratio, data_cor$log_expression)
 
 cor_test_result
@@ -535,7 +618,6 @@ The transfer was quantitatively correlated with the expression of the comK gene 
 
 # Figure S8-S12 - Antibiotic treatments
 
-Load data and check that I can reproduce the figure:
 
 ```{r}
 read_single_receptive_field <- function(sheet, row, column) {
@@ -608,33 +690,41 @@ data_S8_12 <- rbind(
          condition = factor(condition, levels = c("Empty LB", "Amp500", "Cm5", "Rif")))
 ```
 
-First let us recreate all the b) panels - each dot is a single receptive field, the errorbar shows mean +/- standard error.
 
 ```{r}
-data_S8_12 %>% 
-  filter(!grepl("NTs", category)) %>%
-  pivot_wider(names_from = "category", values_from = "count") %>%
-  mutate(ratio_alive = `live cells` / (`live cells` + `dying cells`)) %>%
-  ggplot(aes(x = time, y = ratio_alive)) +
-    geom_point(position = position_jitter(width = 0.3), alpha = 0.5) + geom_errorbar(stat = "summary", fun.data = mean_se) + facet_wrap(~condition) + scale_y_continuous(labels = scales::percent)
-```
+#First let us recreate all the b) panels - each dot is a single receptive field, the errorbar shows mean +/- standard error.
 
-Now the same for the c) panels:
-
-```{r}
-data_S8_12 %>% 
-  mutate(alive = grepl("live", category), type = if_else(grepl("NTs", category), "NTs", "cells")) %>%
-  select(-category) %>%
-  pivot_wider(names_from = "type", values_from = "count") %>%
-  mutate(ratio_NT = if_else(cells == 0, 0, NTs / cells)) %>%
-  ggplot(aes(x = time, y = ratio_NT)) +
-    geom_point(position = position_jitter(width = 0.3), alpha = 0.5) + geom_errorbar(stat = "summary", fun.data = mean_se) + facet_wrap(~condition)  + scale_y_continuous(labels = scales::percent)
+if(redo_plots) {
+  data_S8_12 %>% 
+    filter(!grepl("NTs", category)) %>%
+    pivot_wider(names_from = "category", values_from = "count") %>%
+    mutate(ratio_alive = `live cells` / (`live cells` + `dying cells`)) %>%
+    ggplot(aes(x = time, y = ratio_alive)) +
+      geom_point(position = position_jitter(width = 0.3), alpha = 0.5) + 
+      geom_errorbar(stat = "summary", fun.data = mean_se) + 
+      facet_wrap(~condition) + 
+      scale_y_continuous(labels = scales::percent)
+}
 ```
 
 
-## Do Ampicillin treated cells produce less NTs than p-GLG? Lets look at total NTs first:
+```{r}
+#Now the same for the c) panels:
+if(redo_plots) {
+  data_S8_12 %>% 
+    mutate(alive = grepl("live", category), type = if_else(grepl("NTs", category), "NTs", "cells")) %>%
+    select(-category) %>%
+    pivot_wider(names_from = "type", values_from = "count") %>%
+    mutate(ratio_NT = if_else(cells == 0, 0, NTs / cells)) %>%
+    ggplot(aes(x = time, y = ratio_NT)) +
+      geom_point(position = position_jitter(width = 0.3), alpha = 0.5) + geom_errorbar(stat = "summary", fun.data = mean_se) + facet_wrap(~condition)  + scale_y_continuous(labels = scales::percent)
+}
+```
 
-Similarly to Figure 2, we will use a binomial generalized linear model. Cells with NTs are treated as succes and cells without NTs as failures.
+
+## Do Ampicillin treated cells produce fewer NTs than p-GLG? 
+
+Let us look at total NTs first. Similarly to Figure 2, we will use a binomial generalized linear model. Cells with NTs are treated as succes and cells without NTs as failures.
 
 ```{r}
 #ampicilin_t_90 <- tibble(Replicate = "All", `live cells` = 0, `live cells NTs` = 0, `dying cells` = 614, `dying cells NTs` = 23, condition = "Ampicilin")
@@ -785,7 +875,6 @@ The distribution of NTs is notably different from that of wild type (p < 0.001).
 
 # Figure S14 - Plasmid transfer
 
-Showing a variant of Figure S14c, only the DNAse- condition, substitutin 1 for zero counts (actually only the `Spc, Cm` condition has non-zero counts)
 
 ```{r}
 read_figS14_subset <- function(range, condition) {
@@ -802,7 +891,11 @@ figS14_data <- rbind(
     transformations = if_else(transformations == 0, 1, transformations),
     recipients_100 = recipients / 100, ratio = transformations / recipients, ratio_100 = transformations / recipients_100, condition = factor(condition, levels = c("Spc, Cm","MLS, Spc","MLS, Cm, Spc") ))
 
-figS14_data %>% filter(dnase == "baseline")  %>% ggplot(aes(x = condition, y = ratio_100)) + geom_point(color = "gray", position = position_jitter(width = 0.3)) + stat_summary(fun.data = mean_se) + scale_y_log10()
+if(redo_plots) {
+  # Showing a variant of Figure S14c, only the DNAse- condition, substitutin 1 for zero counts (actually only the `Spc, Cm` condition has non-zero counts)
+
+  figS14_data %>% filter(dnase == "baseline")  %>% ggplot(aes(x = condition, y = ratio_100)) + geom_point(color = "gray", position = position_jitter(width = 0.3)) + stat_summary(fun.data = mean_se) + scale_y_log10()
+}
 
 ```
 
@@ -817,6 +910,75 @@ TukeyHSD(aov(fit_figS14_all))
 ```
 
 All the contrasts of `Spc, Cm` in the baseline (dnase-) condition against everything are significant with p < 0.001. 
+
+
+# Fig S17d
+
+```{r}
+data_S17d <- rbind(
+  read_condition_sem_quantification("SEM", c("J","K"), condition = "SEM", rows_from = c(2,8,14), rows_to = c(4,11,15), file = "S17d Quantification of NTs in liquid medium.xlsx"),
+  read_condition_sem_quantification("SIM", c("G","H"), condition = "SIM", rows_from = c(2,10,15), rows_to = c(7,11,21), file = "S17d Quantification of NTs in liquid medium.xlsx")
+)
+
+if(redo_plots) {
+  data_S17d %>% group_by(condition, replicate) %>%
+    summarise(prop_NTs = sum(NTs) / sum(Cells), .groups = "drop") %>%
+    group_by(condition) %>%
+    summarise(petc_NTs_mean = mean(prop_NTs) * 100, perc_NTs_SEM = sd(prop_NTs) / sqrt(n()) * 100, .groups = "drop")
+}
+
+```
+
+We can analyze the difference with a binomial GLM, cells with NTs are treated as success, cells without NTs as failures.
+
+```{r}
+fit_S17d <- glm(cbind(NTs, Cells - NTs) ~ condition, data = data_S17d, family = "binomial")
+summary(fit_S17d)
+
+```
+
+While the SIM condition has more NTs per cell, the difference is not significant.
+
+# Fig S17h
+
+```{r}
+data_S17h <- rbind(
+  read_condition_sem_quantification("SEM", c("J","L"), condition = "SEM", rows_from = c(3,12,20), rows_to = c(7,15,26), file = "S17h Quantification of NTs on solid medium.xlsx", space = TRUE),
+  read_condition_sem_quantification("SIM", c("J","L"), condition = "SIM", rows_from = c(4,7,10), rows_to = c(4,7,10), file = "S17h Quantification of NTs on solid medium.xlsx", space = TRUE)
+)
+
+if(redo_plots) {
+  data_S17h %>% group_by(condition, replicate) %>%
+    summarise(prop_NTs = sum(NTs) / sum(Cells), .groups = "drop") %>%
+    group_by(condition) %>%
+    summarise(petc_NTs_mean = mean(prop_NTs) * 100, perc_NTs_SEM = sd(prop_NTs) / sqrt(n()) * 100, .groups = "drop")
+}
+
+```
+
+For analysis with a generalized linear model, we need to regularize, as the SIM condition has no NTs at all. First regularizing by adding one success and one failure to both conditions:
+
+```{r}
+fit_S17h_reg <- glm(cbind(NTs + 1, Cells - NTs + 1) ~ condition, data = data_S17h, family = "binomial")
+summary(fit_S17h_reg)
+
+```
+
+Under this regularization the difference is significant. To be sure let us also check with a Bayesian GLM:
+
+```{r, message=FALSE, results = "hide", cache = TRUE}
+fit_S17h_stan <- 
+  rstanarm::stan_glm(cbind(NTs, Cells - NTs) ~ condition, family = "binomial", data = data_S17h, 
+                     prior_intercept = normal(0,10), prior = normal(0,5),
+                     warmup = 1000, iter = 6000) # Large number of iterations to accurately sample tails of the distributions
+```
+
+```{r}
+summary(fit_S17h_stan, probs = c(0.0005, 0.025, 0.975, 0.9995))
+
+```
+
+Once again the difference is notable - as witnessed by even the 99.9% posterior credible interval being very far from zero. The difference between the SIM and SEM conditions is significant (p < 0.001).
 
 
 # Original computing environment
