@@ -1,15 +1,15 @@
 ---
 title: "Bacterial nanotubes are a manifestation of cell death: Supplementary Statistical Analysis"
 output:
-  word_document:
-    toc: yes
   html_document:
     code_folding: hide
+    toc: yes
+  word_document:
     toc: yes
   pdf_document:
     toc: yes
 abstract: |+
-  The statistical analysis is presented here in the same order as the data/figures in the main paper. All code can be accessed from this document or at https://github.com/cas-bioinf/nanotubes-death.
+  The statistical analysis is presented here in the same order as the data/figures in the main paper. All code can be found in supplementary files or at https://github.com/cas-bioinf/nanotubes-death.
 ---
 
 ```{r setup_echo, echo = FALSE}
@@ -21,7 +21,7 @@ if(document_output) {
   knitr::opts_chunk$set(echo = FALSE)
 }
 
-redo_plots <- TRUE # Set to TRUE to recreate variants of all the figures (originally used to check that the data was loaded correctly)
+redo_plots <- FALSE # Set to TRUE to recreate variants of all the figures (originally used to check that the data was loaded correctly)
 
 ```
 
@@ -105,7 +105,7 @@ summary(fit_S1l_stan, probs = c(0.025, 0.975))
 
 ```
 
-Once again, no differences can be deemed significant - however, the data also cannot rule out that the true differences are substantial as witnessed by the wide posterior credible intervals. Importantly, as seen in Fig. 5 - when a different microscopic technique was used - the effect of the absence of $sigD$ on formation of NTs was significant.
+Once again, no differences can be deemed significant - however, the data also cannot rule out that the true differences are substantial as witnessed by the wide posterior credible intervals. Importantly, as discussed in [analysis for Supplementary Figure 5](#figS5), when a different microscopic technique was used the effect of the absence of $sigD$ on formation of NTs was significant.
 
 
 # Figure 1c - Spatial distribution of NTs
@@ -292,7 +292,7 @@ Even after this restriction, the data are not conclusive (p > 0.1). We therefore
 
 There is good evidence that there are more dying cells and more cells with NTs  in the P-GLG condition (p < 0.001 and p = 0.04 respectively), but it is not clear whether a single dying cell is more likely to have NTs in the P-GLG condition.
 
-# Figure S5 a,b - Frequency of NT formation in $\Delta sigD$
+# Figure S5 a,b - Frequency of NT formation in $\Delta sigD$ {#figS5}
 
 
 ```{r}
@@ -324,7 +324,7 @@ wt_sigD_data <-
 
 
 ```{r}
-wt_sigD_data %>% group_by(condition) %>% summarise(ratio_NT_all = sum(total_NTs) / sum(total_cells), ratio_NT_dying = sum(`dying cells NTs`) / sum(`dying cells`))
+wt_sigD_data %>% group_by(condition) %>% summarise(ratio_NT_all = sum(total_NTs) / sum(total_cells), ratio_NT_dying = sum(`dying cells NTs`) / sum(`dying cells`), .groups = "drop")
 ```
 
 First, we examine the proportion of NTs across all cells, _i. e._ cells with NTs are treated as success while cells without NTs are treated as failures in a binomial generalized linear model:
@@ -338,7 +338,7 @@ summary(fit_wt_sigD_NT)
 
 Here, we get a significantly lower rate of overall NT formation in $\Delta sigD$ (p < 0.001).
 
-Now let's look at the proportion of NTs in dying cells only, _i. e._ dying cells with NTs are treated as success and dying cells without NTs are treated as failures:
+Now let us look at the proportion of NTs in dying cells only, _i. e._ dying cells with NTs are treated as success and dying cells without NTs are treated as failures:
 
 ```{r}
 fit_wt_sigD_NT_dying <- wt_sigD_data %>%
@@ -427,10 +427,10 @@ wt_lytEF_data <-
 
 
 ```{r}
-wt_lytEF_data %>% group_by(condition) %>% summarise(ratio_NT_all = sum(total_NTs) / sum(total_cells), ratio_NT_dying = sum(`dying cells NTs`) / sum(`dying cells`))
+wt_lytEF_data %>% group_by(condition) %>% summarise(ratio_NT_all = sum(total_NTs) / sum(total_cells), ratio_NT_dying = sum(`dying cells NTs`) / sum(`dying cells`), .groups = "drop")
 ```
 
-First, let's look at the proportion of NTs across all cells:
+First, let us look at the proportion of NTs across all cells:
 
 ```{r}
 fit_wt_lytEF <- wt_lytEF_data %>%
@@ -439,9 +439,9 @@ fit_wt_lytEF <- wt_lytEF_data %>%
 summary(fit_wt_lytEF)
 ```
 
-NTs are formed at significantly lower rate in $\Delta lytEF$ (p < 0.001).
+NTs are formed at a significantly lower rate in $\Delta lytEF$ (p < 0.001).
 
-Now let's look at the proportion of NTs in dying cells only:
+Now let us look at the proportion of NTs in dying cells only:
 
 ```{r}
 fit_wt_lytEF_NT_dying <- wt_lytEF_data %>%
@@ -502,8 +502,11 @@ summary(fit_lytEF_NTs)
 
 With this regularization we can say that dying cells produced signicantly more NTs than living cells (p < 0.01).
 
-# Figure 4b - DNase treatments
+# Figure 4 - Plasmid transfer
 
+## Transfer and DNase treatments
+
+In the following, we need to work on the log scale for better visualisation, however the data contain conditions with 0 transformations. To handle this data easily, we add 1 transformation to all conditions.
 
 ```{r}
 read_dnase_subset <- function(file, sheet, range, condition) {
@@ -526,7 +529,7 @@ fig4_data <- rbind(
 ) %>% 
   pivot_longer(cols = c("baseline", "dnase"), names_to = "dnase", values_to = "transformations") %>%
   mutate(
-    transformations = if_else(transformations == 0, 1, transformations),
+    transformations = 1 + transformations,
     recipients_100 = recipients / 100, ratio = transformations / recipients, ratio_100 = transformations / recipients_100, condition = factor(condition, levels = c("wt","-sigD","Phs-comK", "-comK") ))
 
 
@@ -542,7 +545,7 @@ if(redo_plots) {
 #   ggplot(aes(x = condition, y = mean_ratio, ymin = mean_ratio - sd_ratio, ymax = mean_ratio + sd_ratio)) + geom_linerange() + geom_point(stat = "identity") + scale_y_log10()
 ```
 
-We will model the logarithm of the ratio of transformations with a normal linear model with condition and DNase presence/absence as covariates (including their interaction).
+Here we use the data shown in Figure 4b. We will model the logarithm of the ratio of transformations + 1 with a normal linear model with condition and DNase presence/absence as covariates (including their interaction).
 
 ```{r}
 fit_fig4_all <- fig4_data %>%
@@ -560,7 +563,7 @@ All interesting pairwise comparisons are significant even after adjustments for 
 Otherwise all p < 0.001.
 
 
-# Figure 4c - $comK$ expression.
+## $comK$ expression.
 
 ```{r}
 data_fig4c <- readxl::read_excel("Fig. 4_Primary data_OB.xlsx", sheet = "Fig.4 chart c", range = "C2:G4",
@@ -588,20 +591,40 @@ TukeyHSD(aov(fit_fig4c))
 
 Except for the "$\Delta sigD$ vs. wt" pair, all conditions are statistically significantly different from each other at p < 0.001. 
 
-# Correlation between $comK$ expression and plasmid transfer
+## Correlation between $comK$ expression and plasmid transfer
 
-We start by examining the correlation visually, replacing 0s in the transformation data for comK with 1/number of recipients to avoid taking the log of 0.
 
 ```{r}
-data_cor <- data_fig4c %>% inner_join(fig4_data %>% filter(dnase == "baseline"), by = c("condition", "replicate")) %>%
+data_cor <- data_fig4c %>% mutate(replicate = if_else(replicate == "E4", "E1", replicate)) %>%   
+  inner_join(fig4_data %>% filter(dnase == "baseline"), by = c("condition", "replicate")) %>%
   mutate(ratio = if_else(condition == "-comK", 1 / recipients, ratio)) %>%
-  mutate(log_ratio = log10(ratio), log_expression = log(relative_expression))
+  mutate(log_ratio = log10(ratio), log_expression = log(relative_expression),
+         condition = factor(condition, levels = c("wt","-sigD", "-comK", "Phs-comK")))
 
-data_cor %>% 
-  ggplot(aes(x = relative_expression, y = log10(ratio), shape = condition, color = condition, group = 1)) + geom_smooth(method = "lm")+ geom_point(size = 2) + scale_x_log10("Relative comK expression") + scale_y_continuous("Log10(Ratio transformable)")
+if(redo_plots) {
+  plot_corr <- data_cor %>% 
+    ggplot(aes(x = relative_expression, y = ratio * 1e6, shape = condition, color = condition, group = 1)) + 
+    geom_vline(xintercept = 100, linetype = "dashed", size = 2, color = "gray") +
+    geom_smooth(method = "lm", formula = y ~ x, show.legend=FALSE) + 
+    geom_point(size = 3, position = position_jitter(width = 0.1)) +
+    scale_x_log10("Relative comK expression", breaks = c(0.01, 1, 100, 10000), labels = c("0.01%", "1%", "100%","10000%") ) + scale_y_log10("Transformable per million cells", breaks = c(1, 100, 10000), labels = as.character) +
+    scale_color_brewer(type = "qual", palette = 6) + theme(legend.title = element_blank())
+  
+  print(plot_corr)
+  ggsave("plot_corr.svg", plot_corr)
+  
+  inkscape_path <-'C:/Program Files/Inkscape/inkscape.exe'
+  if(!file.exists(inkscape_path)) {
+    warning("Could not find inkscape, will not convert to .emf")
+  } else {
+     input_file <- "plot_corr.svg"
+     output_file <- "plot_corr.emf"
+     system(paste0('"', inkscape_path,'"', ' --file "', input_file, '" --export-emf "', output_file, '"'))
+  }
+}
 ```
 
-Then we run Pearson's correlation test on the data:
+We run Pearson's correlation test on the combination of relative expression and :
 
 ```{r}
 cor_test_result <- cor.test(data_cor$log_ratio, data_cor$log_expression)
@@ -775,7 +798,7 @@ data_s8_12_model <- data_S8_12 %>%
 
 ```
 
-First, let's look at the number of dying cells for each condition (live cells treated as success and dying cells as failures):
+First, let us look at the number of dying cells for each condition (live cells treated as success and dying cells as failures):
 
 ```{r}
 for(condition_to_test in unique(data_s8_12_model$condition)) {
@@ -818,7 +841,7 @@ We see significant changes in number of dying cells over time for all but the Em
 
 ## Do number of total NTs change over time
 
-Now let's look at the number of total NTs. We test only the Amp500 condition, because other conditions have at most one NT over all fields scanned.
+Now let us look at the number of total NTs. We test only the Amp500 condition, because other conditions have at most one NT over all fields scanned.
 
 ```{r}
   fit_s8_12_time_NT <- data_s8_12_model %>%
@@ -913,8 +936,9 @@ TukeyHSD(aov(fit_figS14_all))
 All the contrasts of `Spc, Cm` in the baseline (DNase-) condition against everything are significant with p < 0.001. 
 
 
-# Fig S17d
+# Figure S17 - SIM and SEM
 
+## Figure S17d
 ```{r}
 data_S17d <- rbind(
   read_condition_sem_quantification("SEM", c("J","K"), condition = "SEM", rows_from = c(2,8,14), rows_to = c(4,11,15), file = "S17d Quantification of NTs in liquid medium.xlsx"),
@@ -940,7 +964,7 @@ summary(fit_S17d)
 
 While the SIM condition has more NTs per cell, the difference is not significant.
 
-# Fig S17h
+## Figure S17h
 
 ```{r}
 data_S17h <- rbind(
