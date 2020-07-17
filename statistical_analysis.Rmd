@@ -9,7 +9,7 @@ output:
   pdf_document:
     toc: yes
 abstract: |+
-  The statistical analysis is presented here in the same order as the data/figures in the main paper. All code can be found in supplementary files or at https://github.com/cas-bioinf/nanotubes-death.
+  This documents contains details of the statistical analysis for the main paper. The analysis is presented here in the same order as the data/figures in the main paper. Code to reproduce the analysis can be found in supplementary files or at https://github.com/cas-bioinf/nanotubes-death.
 ---
 
 ```{r setup_echo, echo = FALSE}
