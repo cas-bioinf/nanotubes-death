@@ -4,10 +4,10 @@ output:
   html_document:
     code_folding: hide
     toc: yes
-  word_document:
-    toc: yes
-  pdf_document:
-    toc: yes
+#  word_document:
+#    toc: yes
+#  pdf_document:
+#    toc: yes
 abstract: |+
   This documents contains details of the statistical analysis for the main paper. The analysis is presented here in the same order as the data/figures in the main paper. Code to reproduce the analysis can be found in supplementary files or at https://github.com/cas-bioinf/nanotubes-death.
 ---
@@ -21,7 +21,7 @@ if(document_output) {
   knitr::opts_chunk$set(echo = FALSE)
 }
 
-redo_plots <- FALSE # Set to TRUE to recreate variants of all the figures (originally used to check that the data was loaded correctly)
+redo_plots <- TRUE # Set to TRUE to recreate variants of all the figures (originally used to check that the data was loaded correctly)
 
 ```
 
@@ -67,7 +67,7 @@ data_S1l <- rbind(
   read_condition_sem_quantification("SigI", c("H","I"), rows_from = c(2,19,34,50), rows_to = c(4,20,36,51)),
   read_condition_sem_quantification("7ECF", c("H","I"), rows_from = c(2,19,34), rows_to = c(4,22,34)),
   read_condition_sem_quantification("SigB", c("H","I"), rows_from = c(2,19), rows_to = c(4,21)),
-  read_condition_sem_quantification("SEM", c("J","K"), condition = "-hag", rows_from = c(2,8,14), rows_to = c(4,11,15), file = "S17d Quantification of NTs in liquid medium.xlsx")
+  read_condition_sem_quantification("SEM", c("J","K"), condition = "-hag", rows_from = c(2,8,14), rows_to = c(4,11,15), file = "S16d Quantification of NTs in liquid medium.xlsx")
 )  
 
 if(redo_plots) {
@@ -105,7 +105,7 @@ summary(fit_S1l_stan, probs = c(0.025, 0.975))
 
 ```
 
-Once again, no differences can be deemed significant - however, the data also cannot rule out that the true differences are substantial as witnessed by the wide posterior credible intervals. Importantly, as discussed in [analysis for Supplementary Figure 5](#figS5), when a different microscopic technique was used the effect of the absence of $sigD$ on formation of NTs was significant.
+Once again, no differences can be deemed significant - however, the data also cannot rule out that the true differences are substantial as witnessed by the wide posterior credible intervals. Importantly, as discussed in [analysis for Supplementary Figure 6](#figS6), when a different microscopic technique was used the effect of the absence of $sigD$ on formation of NTs was significant.
 
 
 # Figure 1c - Spatial distribution of NTs
@@ -292,18 +292,18 @@ Even after this restriction, the data are not conclusive (p > 0.1). We therefore
 
 There is good evidence that there are more dying cells and more cells with NTs  in the P-GLG condition (p < 0.001 and p = 0.04 respectively), but it is not clear whether a single dying cell is more likely to have NTs in the P-GLG condition.
 
-# Figure S5 a,b - Frequency of NT formation in $\Delta sigD$ {#figS5}
+# Figure S6 a,b - Frequency of NT formation in $\Delta sigD$ {#figS6}
 
 
 ```{r}
-data_S5ab <- read_cell_count_data("Fig. S5_Primary data_OB.xlsx", sheet = "Fig S5 chart ab", prefix = "SigD ") %>%
+data_S6ab <- read_cell_count_data("Fig. S6_Primary data_OB.xlsx", sheet = "Fig S6 chart ab", prefix = "SigD ") %>%
   mutate(condition = "-SigD P-GLG")
 
-#Recreate figures S5a,b to check if the data were loaded correctly:
+#Recreate figures S6a,b to check if the data were loaded correctly:
 if(redo_plots) {
-  plot5a <- plot_cell_count_data_alive(data_S5ab, NULL) + expand_limits(y = 1)
-  plot5b <- plot_cell_count_data_NTs(data_S5ab, facet_wrap(~alive_string)) + expand_limits(y = 0.1)
-  plot5a + plot5b
+  plot6a <- plot_cell_count_data_alive(data_S6ab, NULL) + expand_limits(y = 1)
+  plot6b <- plot_cell_count_data_NTs(data_S6ab, facet_wrap(~alive_string)) + expand_limits(y = 0.1)
+  plot6a + plot6b
 }
 ```
 
@@ -312,7 +312,7 @@ Is the the frequency of NT formation in $\Delta sigD$ (at 90 min)  lower than in
 
 ```{r}
 wt_sigD_data <- 
-  rbind(data_S5ab, p_glg) %>%
+  rbind(data_S6ab, p_glg) %>%
   mutate(condition = factor(condition, levels = c("P-GLG","-SigD P-GLG"))) %>%
   filter(time != "0") %>%
   select(-alive, -alive_string, - type) %>% 
@@ -354,7 +354,7 @@ If we look at the dying cells only, we also have a significantly lower rate of N
 Are the differences over time and conditions in the $\Delta sigD$ condition significant?
 
 ```{r}
-data_within_sigD <-  data_S5ab %>%
+data_within_sigD <-  data_S6ab %>%
   select(-alive, -alive_string, - type) %>% 
   pivot_wider(names_from = category, values_from = count)
 
@@ -382,7 +382,7 @@ Finally, we can look at the difference in percentage of NTs between live and dyi
 
 
 ```{r}
-fit_sigD_NTs <- data_S5ab %>%
+fit_sigD_NTs <- data_S6ab %>%
   filter(time == 90) %>%
   select(-alive_string, -time, -type) %>%
   mutate(category = str_remove(as.character(category), "live |dying ")) %>%
@@ -396,26 +396,26 @@ summary(fit_sigD_NTs)
 
 With this regularization we can say that dying cells produced significantly more NTs than living cells (p = 0.03).
 
-# Figure S5 d,e - Frequency of NT formation in $\Delta lytEF$
+# Figure S6 d,e - Frequency of NT formation in $\Delta lytEF$
 
 Now we will do the same analysis as we did for $\Delta sigD$, but using data for $\Delta lytEF$. 
 
 ```{r}
 
-data_S5de <- read_cell_count_data("Fig. S5_Primary data_OB.xlsx", sheet = "Fig S5 chart de", prefix = "LytEF ") %>% mutate(condition = "-lytEF P-GLG")
+data_S6de <- read_cell_count_data("Fig. S6_Primary data_OB.xlsx", sheet = "Fig S6 chart de", prefix = "LytEF ") %>% mutate(condition = "-lytEF P-GLG")
 
-#Recreate figures S5d,e to check if the data were loaded correctly.
+#Recreate figures S6d,e to check if the data were loaded correctly.
 if(redo_plots) {
-  figS5d <- plot_cell_count_data_alive(data_S5de, NULL) + expand_limits(y = 1)
-  figS5e <- plot_cell_count_data_NTs(data_S5de, facet_wrap(~alive_string)) 
-  figS5d + figS5e
+  figS6d <- plot_cell_count_data_alive(data_S6de, NULL) + expand_limits(y = 1)
+  figS6e <- plot_cell_count_data_NTs(data_S6de, facet_wrap(~alive_string)) 
+  figS6d + figS6e
 }
 ```
 
 
 ```{r}
 wt_lytEF_data <- 
-  rbind(data_S5de, p_glg) %>%
+  rbind(data_S6de, p_glg) %>%
   mutate(condition = factor(condition, levels = c("P-GLG","-lytEF P-GLG"))) %>%
   filter(time != "0") %>%
   select(-alive, -alive_string, - type) %>% 
@@ -457,7 +457,7 @@ If we look at the dying cells only, we also have a significantly lower rate in $
 
 
 ```{r}
-data_within_lytEF <-  data_S5de %>%
+data_within_lytEF <-  data_S6de %>%
   select(-alive, -alive_string, - type) %>% 
   pivot_wider(names_from = category, values_from = count)
 
@@ -488,7 +488,7 @@ Finally, we can look at the difference in percentage of NTs between live and dyi
 
 
 ```{r}
-fit_lytEF_NTs <- data_S5de %>%
+fit_lytEF_NTs <- data_S6de %>%
   filter(time == 90) %>%
   select(-alive_string, -time, -type) %>%
   mutate(category = str_remove(as.character(category), "live |dying ")) %>%
@@ -936,17 +936,17 @@ TukeyHSD(aov(fit_figS14_all))
 All the contrasts of `Spc, Cm` in the baseline (DNase-) condition against everything are significant with p < 0.001. 
 
 
-# Figure S17 - SIM and SEM
+# Figure S16 - SIM and SEM
 
-## Figure S17d
+## Figure S16d
 ```{r}
-data_S17d <- rbind(
-  read_condition_sem_quantification("SEM", c("J","K"), condition = "SEM", rows_from = c(2,8,14), rows_to = c(4,11,15), file = "S17d Quantification of NTs in liquid medium.xlsx"),
-  read_condition_sem_quantification("SIM", c("G","H"), condition = "SIM", rows_from = c(2,10,15), rows_to = c(7,11,21), file = "S17d Quantification of NTs in liquid medium.xlsx")
+data_S16d <- rbind(
+  read_condition_sem_quantification("SEM", c("J","K"), condition = "SEM", rows_from = c(2,8,14), rows_to = c(4,11,15), file = "S16d Quantification of NTs in liquid medium.xlsx"),
+  read_condition_sem_quantification("SIM", c("G","H"), condition = "SIM", rows_from = c(2,10,15), rows_to = c(7,11,21), file = "S16d Quantification of NTs in liquid medium.xlsx")
 )
 
 if(redo_plots) {
-  data_S17d %>% group_by(condition, replicate) %>%
+  data_S16d %>% group_by(condition, replicate) %>%
     summarise(prop_NTs = sum(NTs) / sum(Cells), .groups = "drop") %>%
     group_by(condition) %>%
     summarise(petc_NTs_mean = mean(prop_NTs) * 100, perc_NTs_SEM = sd(prop_NTs) / sqrt(n()) * 100, .groups = "drop")
@@ -957,23 +957,23 @@ if(redo_plots) {
 We can analyze the difference with a binomial GLM, cells with NTs are treated as success, cells without NTs as failures.
 
 ```{r}
-fit_S17d <- glm(cbind(NTs, Cells - NTs) ~ condition, data = data_S17d, family = "binomial")
-summary(fit_S17d)
+fit_S16d <- glm(cbind(NTs, Cells - NTs) ~ condition, data = data_S16d, family = "binomial")
+summary(fit_S16d)
 
 ```
 
 While the SIM condition has more NTs per cell, the difference is not significant.
 
-## Figure S17h
+## Figure S16h
 
 ```{r}
-data_S17h <- rbind(
-  read_condition_sem_quantification("SEM", c("J","L"), condition = "SEM", rows_from = c(3,12,20), rows_to = c(7,15,26), file = "S17h Quantification of NTs on solid medium.xlsx", space = TRUE),
-  read_condition_sem_quantification("SIM", c("J","L"), condition = "SIM", rows_from = c(4,7,10), rows_to = c(4,7,10), file = "S17h Quantification of NTs on solid medium.xlsx", space = TRUE)
+data_S16h <- rbind(
+  read_condition_sem_quantification("SEM", c("J","L"), condition = "SEM", rows_from = c(3,12,20), rows_to = c(7,15,26), file = "S16h Quantification of NTs on solid medium.xlsx", space = TRUE),
+  read_condition_sem_quantification("SIM", c("J","L"), condition = "SIM", rows_from = c(4,7,10), rows_to = c(4,7,10), file = "S16h Quantification of NTs on solid medium.xlsx", space = TRUE)
 )
 
 if(redo_plots) {
-  data_S17h %>% group_by(condition, replicate) %>%
+  data_S16h %>% group_by(condition, replicate) %>%
     summarise(prop_NTs = sum(NTs) / sum(Cells), .groups = "drop") %>%
     group_by(condition) %>%
     summarise(petc_NTs_mean = mean(prop_NTs) * 100, perc_NTs_SEM = sd(prop_NTs) / sqrt(n()) * 100, .groups = "drop")
@@ -984,22 +984,22 @@ if(redo_plots) {
 For analysis with a generalized linear model, we need to regularize, as the SIM condition has no NTs at all. First regularizing by adding one success and one failure to both conditions:
 
 ```{r}
-fit_S17h_reg <- glm(cbind(NTs + 1, Cells - NTs + 1) ~ condition, data = data_S17h, family = "binomial")
-summary(fit_S17h_reg)
+fit_S16h_reg <- glm(cbind(NTs + 1, Cells - NTs + 1) ~ condition, data = data_S16h, family = "binomial")
+summary(fit_S16h_reg)
 
 ```
 
 Under this regularization the difference is significant. To be sure let us also check with a Bayesian GLM:
 
 ```{r, message=FALSE, results = "hide", cache = TRUE}
-fit_S17h_stan <- 
-  rstanarm::stan_glm(cbind(NTs, Cells - NTs) ~ condition, family = "binomial", data = data_S17h, 
+fit_S16h_stan <- 
+  rstanarm::stan_glm(cbind(NTs, Cells - NTs) ~ condition, family = "binomial", data = data_S16h, 
                      prior_intercept = normal(0,10), prior = normal(0,5),
                      warmup = 1000, iter = 6000) # Large number of iterations to accurately sample tails of the distributions
 ```
 
 ```{r}
-summary(fit_S17h_stan, probs = c(0.0005, 0.025, 0.975, 0.9995))
+summary(fit_S16h_stan, probs = c(0.0005, 0.025, 0.975, 0.9995))
 
 ```
 
