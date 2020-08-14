@@ -34,12 +34,15 @@ library(readxl)
 library(rstanarm)
 library(cowplot)
 library(patchwork)
+library(Cairo)
 
 theme_set(theme_cowplot())
+  theme_update(strip.background = element_rect(fill = "white", colour = "black"), strip.text = element_text(face = "bold"),panel.spacing.x = unit(0, "cm"), panel.border = element_rect(color = "black")) #theme(panel.spacing.x = 0, panel.)
+
 options(mc.cores = parallel::detectCores())
 ```
 
-# Figure S1 - NTs under SEM in varying genetic background
+# Supplementary Figure 1 - NTs under SEM in varying genetic background
 
 ```{r}
 read_single_sem_quantification <- function(sheet, replicate,  range, condition, file = "FigS1L_Sigmas KOs SEM quantification.xlsx", space = FALSE) {
@@ -140,6 +143,7 @@ read_cell_count_data <- function(file, sheet, prefix) {
     pivot_longer(starts_with(prefix), names_prefix = prefix, names_sep = " t=", names_to = c("category", "time"), values_to = "count") %>%
     mutate(alive = grepl("live", category), 
            alive_string = if_else(alive, "Live", "Dying"),
+           alive_string = factor(alive_string, levels = c("Live", "Dying")),
            type = if_else(grepl("NTs", category), "NTs", "cells"),
            category = factor(category, levels = c("live cells", "dying cells", "live cells NTs", "dying cells NTs" ))
            )
@@ -156,28 +160,52 @@ fig2_data <- rbind(glg, p_glg)
 # Checking the data was loaded correctly (recreating Fig 2b, c):
 
 if(redo_plots) {
+  bar_width <- 0.6
+  errorbar_width <- 0.3
+  jitter_width <- 0.25
+  
   plot_cell_count_data_alive <- function(fig_data, facet = facet_wrap(~condition)) {
     fig_data %>% filter(type == "cells") %>%
       select(-category, -type, -alive) %>%
       pivot_wider(names_from = "alive_string", values_from = "count") %>%
       mutate(fraction_live = Live / (Live + Dying)) %>%
-      ggplot(aes(x = time, y = fraction_live )) + geom_errorbar(stat = "summary", fun.data = mean_se) + facet + geom_bar(stat = "summary", fun.data = mean_se) + scale_y_continuous(labels = scales::percent, breaks = seq(0,1,by = 0.2))
+      ggplot(aes(x = time, y = 100 * fraction_live)) + 
+      geom_bar(stat = "summary", fun.data = mean_se, width = bar_width, fill = "#f0f0f0", color = "black") + 
+      geom_errorbar(stat = "summary", fun.data = mean_se, width = errorbar_width) + 
+      geom_point(position = position_jitter(width = jitter_width, height = 0), size = 2) + 
+      facet + 
+      scale_y_continuous("Percentage of live cells [%]", breaks = 100 * seq(0,1,by = 0.2), limits = c(0,100), expand = c(0,0))
   }
   
   ## Fig 2b
-  print(plot_cell_count_data_alive(fig2_data))
+  fig2b <- plot_cell_count_data_alive(fig2_data) + scale_x_discrete("Time [min]")
+  print(fig2b)
   
-  plot_cell_count_data_NTs <- function(fig_data, facet = facet_wrap(alive_string~condition, nrow = 1)) {
+  ggsave("figs/fig2b.pdf", fig2b, device = cairo_pdf, width = 3.2, height = 4)
+  
+  plot_cell_count_data_NTs <- function(fig_data, facet = facet_wrap(alive_string ~ condition, nrow = 1), group = paste0(alive_string, condition, time), breaks, limits) {
     fig_data %>% 
       select(-category, -alive) %>%
       pivot_wider(names_from = "type", values_from = "count") %>%
       mutate(fraction_NT = NTs / cells) %>%
-      ggplot(aes(x = time, y = fraction_NT )) + geom_errorbar(stat = "summary", fun.data = mean_se) + facet + geom_bar(stat = "summary", fun.data = mean_se) + scale_y_continuous(labels = scales::percent)
+      group_by({{group}}) %>%
+      mutate(all_zero = all(NTs == 0)) %>%
+      ggplot(aes(x = time, y = 100 * fraction_NT, color = all_zero )) + 
+      geom_bar(stat = "summary", fun.data = mean_se, width = bar_width, fill = "#f0f0f0", color = "black") + 
+      geom_errorbar(stat = "summary", fun.data = mean_se, width = errorbar_width) + 
+      geom_point(position = position_jitter(width = jitter_width, height = 0), size = 2) + 
+      facet + 
+      scale_color_manual(values = c("black", "white"), guide = FALSE) +
+      scale_y_continuous("Percentage of cells\nwith nanotubes [%]", breaks = breaks, limits = limits, expand = c(0,0))
     
   }
-  
+
   ## Fig 2c
-  print(plot_cell_count_data_NTs(fig2_data))
+  fig2c <- plot_cell_count_data_NTs(fig2_data, breaks = seq(0,80,by = 20), limits = c(0,80))
+  print(fig2c)
+  
+  ggsave("figs/fig2c.pdf", fig2c, device = cairo_pdf, width = 5.5, height = 4)
+
 }
 ```
 
@@ -193,6 +221,7 @@ fit_fig2_dying <- fig2_data %>% filter(type == "cells") %>%
   glm(cbind(Live, Dying) ~ condition * time, family = "binomial", data = .)
 
 summary(fit_fig2_dying)
+confint(fit_fig2_dying)
 ```
 
 Yes. There are significantly more dying cells in the P-GLG (across both times) and at later time (across both conditions) - the `conditionP-GLG` and `time25` rows above. The interaction (`conditionP-GLG:time25`) is not significant, so we cannot be sure whether the number of dying cells increases faster over time in P-GLG or GLG.
@@ -221,6 +250,7 @@ fit_fig2_NT_p1 <- fig2_data_NT %>%
   glm(cbind(total_NTs + 1, total_cells - total_NTs + 1) ~ condition * time, family = "binomial", data = .)
 
 summary(fit_fig2_NT_p1)
+exp(confint(fit_fig2_NT_p1))
 ```
 
 This leaves us with a significant difference for the P-GLG condition. Alternatively, we can fit a fully Bayesian model with mild regularization using RStanArm.
@@ -292,7 +322,7 @@ Even after this restriction, the data are not conclusive (p > 0.1). We therefore
 
 There is good evidence that there are more dying cells and more cells with NTs  in the P-GLG condition (p < 0.001 and p = 0.04 respectively), but it is not clear whether a single dying cell is more likely to have NTs in the P-GLG condition.
 
-# Figure S6 a,b - Frequency of NT formation in $\Delta sigD$ {#figS6}
+# Supplementary Figure 6 a,b - Frequency of NT formation in $\Delta sigD$ {#figS6}
 
 
 ```{r}
@@ -302,8 +332,12 @@ data_S6ab <- read_cell_count_data("Fig. S6_Primary data_OB.xlsx", sheet = "Fig S
 #Recreate figures S6a,b to check if the data were loaded correctly:
 if(redo_plots) {
   plot6a <- plot_cell_count_data_alive(data_S6ab, NULL) + expand_limits(y = 1)
-  plot6b <- plot_cell_count_data_NTs(data_S6ab, facet_wrap(~alive_string)) + expand_limits(y = 0.1)
-  plot6a + plot6b
+  plot6b <- plot_cell_count_data_NTs(data_S6ab, facet_wrap(~alive_string), group = alive_string, breaks = seq(0,10, by = 2), limits = c(0,10)) + expand_limits(y = 0.1)
+  print(plot6a + plot6b)
+  
+  ggsave("figs/figS6a.pdf", plot6a, device = cairo_pdf, width = 3.2, height = 4)
+  ggsave("figs/figS6b.pdf", plot6b, device = cairo_pdf, width = 5.5, height = 4)
+
 }
 ```
 
@@ -396,7 +430,7 @@ summary(fit_sigD_NTs)
 
 With this regularization we can say that dying cells produced significantly more NTs than living cells (p = 0.03).
 
-# Figure S6 d,e - Frequency of NT formation in $\Delta lytEF$
+# Supplementary Figure 6 d,e - Frequency of NT formation in $\Delta lytEF$
 
 Now we will do the same analysis as we did for $\Delta sigD$, but using data for $\Delta lytEF$. 
 
@@ -407,8 +441,12 @@ data_S6de <- read_cell_count_data("Fig. S6_Primary data_OB.xlsx", sheet = "Fig S
 #Recreate figures S6d,e to check if the data were loaded correctly.
 if(redo_plots) {
   figS6d <- plot_cell_count_data_alive(data_S6de, NULL) + expand_limits(y = 1)
-  figS6e <- plot_cell_count_data_NTs(data_S6de, facet_wrap(~alive_string)) 
+  figS6e <- plot_cell_count_data_NTs(data_S6de, facet_wrap(~alive_string), group = paste0(alive_string, time), breaks = seq(0,3.5, by = 0.5), limits = c(0,3.5)) 
   figS6d + figS6e
+  
+  ggsave("figs/figS6d.pdf", figS6d, device = cairo_pdf, width = 3.2, height = 4)
+  ggsave("figs/figS6e.pdf", figS6e, device = cairo_pdf, width = 5.5, height = 4)
+
 }
 ```
 
@@ -529,6 +567,7 @@ fig4_data <- rbind(
 ) %>% 
   pivot_longer(cols = c("baseline", "dnase"), names_to = "dnase", values_to = "transformations") %>%
   mutate(
+    has_transformations = transformations > 0,
     transformations = 1 + transformations,
     recipients_100 = recipients / 100, ratio = transformations / recipients, ratio_100 = transformations / recipients_100, condition = factor(condition, levels = c("wt","-sigD","Phs-comK", "-comK") ))
 
@@ -536,7 +575,22 @@ fig4_data <- rbind(
 
 # Loading the data and checking that I can reproduce the figures. We replace conditions having 0 transformations with 1s to avoid taking the log of 0. We also show only the DNAse- conditions (all the DNAse+ conditions have 0 transformations).
 if(redo_plots) {
-  fig4_data %>% filter(dnase == "baseline")  %>% ggplot(aes(x = condition, y = ratio_100)) + geom_point(color = "gray", position = position_jitter(width = 0.3)) + stat_summary(fun.data = mean_se) + scale_y_log10()
+  fig4b <-  fig4_data %>% 
+    mutate(ratio_100 = if_else(has_transformations, ratio_100, 1e-2)) %>% #dummy value to not affect the y scale
+    ggplot(aes(x = interaction(dnase, condition), y = ratio_100, fill = has_transformations, color = has_transformations)) + 
+    
+    geom_tile(stat = "summary", fun.data = mean_se, width = bar_width, height =0.001) +
+    geom_errorbar(stat = "summary", fun.data = mean_se, width = errorbar_width) + 
+    geom_point(position = position_jitter(width = jitter_width, height = 0), size = 2) + 
+    
+    scale_color_manual(values = c("white","black"), guide = FALSE) +
+    scale_fill_manual(values = c("white","#f0f0f0"), guide = FALSE) +
+    scale_y_log10("CFU/ml [%] of transformable cells", breaks = 3 * c(1,1e-1,1e-2,1e-3,1e-4)) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.3), panel.border = element_rect(color = NA)) + 
+    expand_limits(y = 3e-4)
+
+  print(fig4b)
+  ggsave("figs/fig4b.pdf", fig4b, device = cairo_pdf, width = 4.5, height = 4.5)
 }
 
 # fig4_data %>% filter(dnase == "baseline") %>% 
@@ -552,6 +606,8 @@ fit_fig4_all <- fig4_data %>%
   mutate() %>%
   lm(log(ratio_100) ~ condition * dnase, data = .)
 
+summary(fit_fig4_all)
+car::Anova(fit_fig4_all)
 TukeyHSD(aov(fit_fig4_all))
 ```
 
@@ -639,7 +695,7 @@ The transfer was quantitatively correlated with the expression of the comK gene 
 
 
 
-# Figure S8-S12 - Antibiotic treatments
+# Supplementary Figure 8-12 - Antibiotic treatments
 
 
 ```{r}
@@ -718,6 +774,12 @@ data_S8_12 <- rbind(
 #First let us recreate all the b) panels - each dot is a single receptive field, the errorbar shows mean +/- standard error.
 
 if(redo_plots) {
+  data_S8_12 %>% 
+    filter(category == "live cells" | category == "dying cells") %>%
+    group_by(condition) %>%
+    summarise(total_cells = sum(count))
+
+
   data_S8_12 %>% 
     filter(!grepl("NTs", category)) %>%
     pivot_wider(names_from = "category", values_from = "count") %>%
@@ -855,7 +917,7 @@ Now let us look at the number of total NTs. We test only the Amp500 condition, b
 
 The time trend of the number of dying cells is statistically significant for all antibiotic conditions (all p < 0.001). Time trend of the number of NTs is statistically significant only for Ampicilin (p < 0.001).
 
-# Figure S8 - P-GLG vs. Ampicilin
+# Supplementary Figure 8 - P-GLG vs. Ampicilin
 
 We further compare the proportion of NTs from dying cells in the P-GLG condition (data from Figure 2) and the Ampicilin condition.
 
@@ -873,7 +935,7 @@ After P-GLG treatment, more NTs are created from dying cells than in Ampicilin (
 
 
 
-# Figure S10 - Spatial distribution of NTs after Ampicilin treatment
+# Supplementary Figure 10 - Spatial distribution of NTs after Ampicilin treatment
 
 Does the spatial distribution of NTs differ between the wt and ampicilin-treated? Here are the counts for the Ampicilin condition:
 
@@ -896,7 +958,7 @@ chisq.test(rbind(nt_counts_location_wt, nt_counts_location_ampicilin), simulate.
 
 The distribution of NTs is notably different from that of wild type (p < 0.001).
 
-# Figure S14 - Plasmid transfer
+# Supplementary Figure 14 - Plasmid transfer
 
 
 ```{r}
@@ -912,13 +974,27 @@ figS14_data <- rbind(
   pivot_longer(cols = c("baseline", "dnase"), names_to = "dnase", values_to = "transformations") %>%
   mutate(
     dnase = if_else(dnase == "dnase", "DNase", "baseline"),
-    transformations = if_else(transformations == 0, 1, transformations),
+    has_transformations = transformations > 0,
+    transformations = if_else(has_transformations, transformations, 1),
     recipients_100 = recipients / 100, ratio = transformations / recipients, ratio_100 = transformations / recipients_100, condition = factor(condition, levels = c("Spc, Cm","MLS, Spc","MLS, Cm, Spc") ))
 
 if(redo_plots) {
   # Showing a variant of Figure S14c, only the DNase- condition, substitutin 1 for zero counts (actually only the `Spc, Cm` condition has non-zero counts)
 
-  figS14_data %>% filter(dnase == "baseline")  %>% ggplot(aes(x = condition, y = ratio_100)) + geom_point(color = "gray", position = position_jitter(width = 0.3)) + stat_summary(fun.data = mean_se) + scale_y_log10()
+  figS14 <- figS14_data %>% 
+    mutate(ratio_100 = if_else(has_transformations, ratio_100, 1e-4)) %>% #dummy value to not affect the y scale
+    ggplot(aes(x = interaction(dnase, condition), y = ratio_100, fill = has_transformations, color = has_transformations)) + 
+      geom_bar(stat = "summary", fun.data = mean_se, width = bar_width) + 
+      geom_errorbar(stat = "summary", fun.data = mean_se, width = errorbar_width) + 
+      geom_point(position = position_jitter(width = jitter_width, height = 0), size = 2) +
+      scale_color_manual(values = c("white","black"), guide = FALSE) +
+      scale_fill_manual(values = c("white","#f0f0f0"), guide = FALSE) +
+      scale_y_continuous(expand = c(0,0), breaks = 0:6 * 1e-3) +
+      expand_limits(y = 7e-3) +
+      theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.3), panel.border = element_rect(color = NA))
+  
+  print(figS14)
+  ggsave("figs/figS14.pdf", figS14, device = cairo_pdf, width = 5, height = 5.5)
 }
 
 ```
@@ -936,9 +1012,9 @@ TukeyHSD(aov(fit_figS14_all))
 All the contrasts of `Spc, Cm` in the baseline (DNase-) condition against everything are significant with p < 0.001. 
 
 
-# Figure S16 - SIM and SEM
+# Supplementary Figure 16 - SIM and SEM
 
-## Figure S16d
+## Supplementary Figure 16d
 ```{r}
 data_S16d <- rbind(
   read_condition_sem_quantification("SEM", c("J","K"), condition = "SEM", rows_from = c(2,8,14), rows_to = c(4,11,15), file = "S16d Quantification of NTs in liquid medium.xlsx"),
@@ -964,7 +1040,7 @@ summary(fit_S16d)
 
 While the SIM condition has more NTs per cell, the difference is not significant.
 
-## Figure S16h
+## Supplementary Figure 16h
 
 ```{r}
 data_S16h <- rbind(
