@@ -588,20 +588,38 @@ fig4_data <- rbind(
 
 # Loading the data and checking that I can reproduce the figures. We replace conditions having 0 transformations with 1s to avoid taking the log of 0. We also show only the DNAse- conditions (all the DNAse+ conditions have 0 transformations).
 if(redo_plots) {
+  
+    bar_base <- 3e-4
+  #breaks <- 1e-4 * 2.5^(0:4)
+  breaks <- 3e-4 * 10^(0:4)
+  
+  # Fake bars on log scale
+  data_tile <- fig4_data %>%
+    rename(has_trans_orig = has_transformations) %>%
+    group_by(dnase, condition) %>%
+    summarise(
+      has_transformations = any(has_trans_orig),
+      height = if_else(has_transformations, mean(ratio_100) - bar_base, 0),
+      ymax = if_else(has_transformations, mean(log(ratio_100)), log(bar_base)),
+      ratio_100 = exp(ymax)
+      )
+
   fig4b <-  fig4_data %>% 
     mutate(ratio_100 = if_else(has_transformations, ratio_100, 1e-2)) %>% #dummy value to not affect the y scale
-    ggplot(aes(x = interaction(dnase, condition), y = ratio_100, fill = has_transformations, color = has_transformations)) + 
+    ggplot(aes(x = interaction(dnase, condition), y = log(ratio_100), fill = has_transformations, color = has_transformations)) + 
     
-    geom_tile(stat = "summary", fun.data = mean_se, width = bar_width, height =0.001) +
+    geom_rect(data = data_tile, aes(ymax = ymax, xmin = ..x.. - bar_width / 2, xmax = ..x.. + bar_width /  2), ymin = log(bar_base)) + 
     geom_errorbar(stat = "summary", fun.data = mean_se, width = errorbar_width) + 
     geom_point(position = position_jitter(width = jitter_width, height = 0), size = 2) + 
     
     scale_color_manual(values = c("white","black"), guide = FALSE) +
     scale_fill_manual(values = c("white","#f0f0f0"), guide = FALSE) +
-    scale_y_log10("CFU/ml [%] of transformable cells", breaks = 3 * c(1,1e-1,1e-2,1e-3,1e-4)) +
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.3), panel.border = element_rect(color = NA)) + 
-    expand_limits(y = 3e-4)
+    scale_y_continuous("CFU/ml [%] of transformable cells", breaks = log(breaks), labels = breaks, expand = c(0,0)) +
+    expand_limits(y = log(6))
 
+
+  
   print(fig4b)
   ggsave("figs/fig4b.pdf", fig4b, device = cairo_pdf, width = 4.5, height = 4.5)
 }
@@ -1009,17 +1027,34 @@ figS14_data <- rbind(
 
 if(redo_plots) {
   # Showing a variant of Figure S14c, only the DNase- condition, substitutin 1 for zero counts (actually only the `Spc, Cm` condition has non-zero counts)
-
+  bar_base <- 1e-4
+  #breaks <- 1e-4 * 2.5^(0:4)
+  breaks <- 1e-4 * 10^(0:2)
+  
+  # Fake bars on log scale
+  data_tile <- figS14_data %>%
+    rename(has_trans_orig = has_transformations) %>%
+    group_by(dnase, condition) %>%
+    summarise(
+      has_transformations = any(has_trans_orig),
+      height = if_else(has_transformations, mean(ratio_100) - bar_base, 0),
+      ymax = if_else(has_transformations, mean(log(ratio_100)), log(bar_base)),
+      ratio_100 = exp(ymax)
+      )
+  
+  #my_fun <- function(x) { mean( }
   figS14 <- figS14_data %>% 
-    mutate(ratio_100 = if_else(has_transformations, ratio_100, 1e-4)) %>% #dummy value to not affect the y scale
-    ggplot(aes(x = interaction(dnase, condition), y = ratio_100, fill = has_transformations, color = has_transformations)) + 
-      geom_bar(stat = "summary", fun.data = mean_se, width = bar_width) + 
+    mutate(ratio_100 = if_else(has_transformations, ratio_100, bar_base)) %>% #dummy value to not affect the y scale
+    ggplot(aes(x = interaction(dnase, condition), y = log(ratio_100), 
+               fill = has_transformations, color = has_transformations
+               )) + 
+      geom_rect(data = data_tile, aes(ymax = ymax, xmin = ..x.. - bar_width / 2, xmax = ..x.. + bar_width / 2), ymin = log(bar_base)) + 
       geom_errorbar(stat = "summary", fun.data = mean_se, width = errorbar_width) + 
       geom_point(position = position_jitter(width = jitter_width, height = 0), size = 2) +
       scale_color_manual(values = c("white","black"), guide = FALSE) +
       scale_fill_manual(values = c("white","#f0f0f0"), guide = FALSE) +
-      scale_y_continuous(expand = c(0,0), breaks = 0:6 * 1e-3) +
-      expand_limits(y = 7e-3) +
+      scale_y_continuous(breaks = log(breaks), labels = breaks, expand = c(0,0)) +
+      expand_limits(y = log(1e-2)) +
       theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.3), panel.border = element_rect(color = NA))
   
   print(figS14)
