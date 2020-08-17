@@ -40,6 +40,11 @@ theme_set(theme_cowplot())
   theme_update(strip.background = element_rect(fill = "white", colour = "black"), strip.text = element_text(face = "bold"),panel.spacing.x = unit(0, "cm"), panel.border = element_rect(color = "black")) #theme(panel.spacing.x = 0, panel.)
 
 options(mc.cores = parallel::detectCores())
+
+if(redo_plots && !dir.exists("figs")) {
+  dir.create("figs")
+}
+
 ```
 
 # Supplementary Figure 1 - NTs under SEM in varying genetic background
@@ -218,10 +223,10 @@ For this and similar analysis of positive and negative cases, we will use a bino
 fit_fig2_dying <- fig2_data %>% filter(type == "cells") %>% 
   select(-category, -alive) %>%
   pivot_wider(names_from = alive_string, values_from = count) %>%
-  glm(cbind(Live, Dying) ~ condition * time, family = "binomial", data = .)
+  glm(cbind(Dying, Live) ~ condition * time, family = "binomial", data = .)
 
 summary(fit_fig2_dying)
-confint(fit_fig2_dying)
+exp(confint(fit_fig2_dying))
 ```
 
 Yes. There are significantly more dying cells in the P-GLG (across both times) and at later time (across both conditions) - the `conditionP-GLG` and `time25` rows above. The interaction (`conditionP-GLG:time25`) is not significant, so we cannot be sure whether the number of dying cells increases faster over time in P-GLG or GLG.
@@ -368,6 +373,7 @@ fit_wt_sigD_NT <- wt_sigD_data %>%
   glm(cbind(total_NTs, total_cells - total_NTs) ~ condition, family = "binomial", data = .)
 
 summary(fit_wt_sigD_NT)
+exp(confint(fit_wt_sigD_NT))
 ```
 
 Here, we get a significantly lower rate of overall NT formation in $\Delta sigD$ (p < 0.001).
@@ -396,6 +402,7 @@ fit_sigD_live_cells <- data_within_sigD %>%
   glm(cbind(`live cells`, `dying cells`) ~ time, family = "binomial", data = .)
 
 summary(fit_sigD_live_cells)
+exp(confint(fit_sigD_live_cells))
 ```
 
 The proportion of live cells decreases significantly at t = 90 (p < 0.001).
@@ -420,12 +427,13 @@ fit_sigD_NTs <- data_S6ab %>%
   filter(time == 90) %>%
   select(-alive_string, -time, -type) %>%
   mutate(category = str_remove(as.character(category), "live |dying ")) %>%
-  mutate(count = count + 1) %>%
+  mutate(count = count + 1, alive = factor(alive, levels = c(TRUE, FALSE))) %>%
   pivot_wider(names_from = category, values_from = count) %>%
   glm(cbind(`cells NTs`, cells - `cells NTs`) ~ alive, data = ., family = "binomial")
 
 
 summary(fit_sigD_NTs)
+exp(confint(fit_sigD_NTs))
 ```
 
 With this regularization we can say that dying cells produced significantly more NTs than living cells (p = 0.03).
@@ -475,6 +483,7 @@ fit_wt_lytEF <- wt_lytEF_data %>%
   glm(cbind(total_NTs, total_cells - total_NTs) ~ condition, family = "binomial", data = .)
 
 summary(fit_wt_lytEF)
+exp(confint(fit_wt_lytEF))
 ```
 
 NTs are formed at a significantly lower rate in $\Delta lytEF$ (p < 0.001).
@@ -483,7 +492,7 @@ Now let us look at the proportion of NTs in dying cells only:
 
 ```{r}
 fit_wt_lytEF_NT_dying <- wt_lytEF_data %>%
-  glm(cbind(`dying cells NTs`, `dying cells`) ~ condition, family = "binomial", data = .)
+  glm(cbind(`dying cells NTs`, `dying cells` - `dying cells NTs`) ~ condition, family = "binomial", data = .)
 
 summary(fit_wt_lytEF_NT_dying)
 ```
@@ -504,6 +513,7 @@ fit_lytEF_live_cells <- data_within_lytEF %>%
   glm(cbind(`live cells`, `dying cells`) ~ time, family = "binomial", data = .)
 
 summary(fit_lytEF_live_cells)
+exp(confint(fit_lytEF_live_cells))
 ```
 
 The proportion of live cells decreases significantly at t = 90 (p < 0.001).
@@ -514,9 +524,11 @@ There are very few NTs overall, and many conditions contain only zero, so we wil
 ```{r}
 fit_lytEF_NTs_dying <- data_within_lytEF %>%  
   mutate(`dying cells NTs` = `dying cells NTs` + 1) %>%
-  glm(cbind(`dying cells NTs`, `dying cells`) ~ time, family = "binomial", data = .)
+  glm(cbind(`dying cells NTs`, `dying cells` - `dying cells NTs`) ~ time, family = "binomial", data = .)
 
 summary(fit_lytEF_NTs_dying)
+exp(confint(fit_wt_lytEF))
+
 ```
 
 The proportion of NTs from dying cells at t=0 is not significantly different from the proportion at t = 90.
@@ -530,12 +542,13 @@ fit_lytEF_NTs <- data_S6de %>%
   filter(time == 90) %>%
   select(-alive_string, -time, -type) %>%
   mutate(category = str_remove(as.character(category), "live |dying ")) %>%
-  mutate(count = count + 1) %>%
+  mutate(count = count + 1, alive = factor(alive, levels = c(TRUE, FALSE))) %>%
   pivot_wider(names_from = category, values_from = count) %>%
-  glm(cbind(cells, `cells NTs`) ~ alive, data = ., family = "binomial")
+  glm(cbind(`cells NTs`, cells - `cells NTs`) ~ alive, data = ., family = "binomial")
 
 
 summary(fit_lytEF_NTs)
+exp(confint(fit_lytEF_NTs))
 ```
 
 With this regularization we can say that dying cells produced signicantly more NTs than living cells (p < 0.01).
@@ -607,8 +620,7 @@ fit_fig4_all <- fig4_data %>%
   lm(log(ratio_100) ~ condition * dnase, data = .)
 
 summary(fit_fig4_all)
-car::Anova(fit_fig4_all)
-TukeyHSD(aov(fit_fig4_all))
+xx <- TukeyHSD(aov(fit_fig4_all))
 ```
 
 All interesting pairwise comparisons are significant even after adjustments for multiple testing. The exceptions are:
@@ -870,6 +882,7 @@ for(condition_to_test in unique(data_s8_12_model$condition)) {
     glm(cbind(total_cells - `dying cells`, `dying cells`) ~  time_num, family = "binomial", data = .)
 
   print(summary(fit_s8_12_time_dying))
+  print(exp(confint((fit_s8_12_time_dying))))
 }
 ```
 
@@ -882,6 +895,8 @@ fit_s8_12_time_dying_amp_reg <- data_s8_12_model %>%
 
 
 summary(fit_s8_12_time_dying_amp_reg)
+exp(confint(fit_s8_12_time_dying_amp_reg))
+
 ```
 
 To be safe, also check with RStanArm:
@@ -913,22 +928,36 @@ Now let us look at the number of total NTs. We test only the Amp500 condition, b
   print(summary(fit_s8_12_time_NT))
 ```
 
+```{r}
+  fit_s8_12_time_NT_dying <- data_s8_12_model %>%
+    filter(condition == "Amp500") %>%
+    glm(cbind(`dying cells NTs`, `dying cells` - `dying cells NTs`) ~ time_num, family = "binomial", data = .)
+  
+  print(summary(fit_s8_12_time_NT_dying))
+  exp(confint(fit_s8_12_time_NT_dying))
+```
+
 ## Summary
 
 The time trend of the number of dying cells is statistically significant for all antibiotic conditions (all p < 0.001). Time trend of the number of NTs is statistically significant only for Ampicilin (p < 0.001).
 
-# Supplementary Figure 8 - P-GLG vs. Ampicilin
+# Supplementary Figure 9 - P-GLG vs. Ampicilin
 
 We further compare the proportion of NTs from dying cells in the P-GLG condition (data from Figure 2) and the Ampicilin condition.
 
 ```{r}
 data_p_GLG_25 <- fig2_data_NT %>% filter(condition == "P-GLG", time == 25) %>% rename(replicate = Replicate) 
 data_amp_30 <- data_s8_12_model %>% filter(condition == "Amp500", time == 30) %>% 
-  mutate(replicate = paste0(replicate, "-", field)) %>% select(-field, -time_num)
+  mutate(replicate = paste0(replicate, "-", field)) %>% 
+  select(-field, -time_num) 
 
-fit_pglg_amp <- glm(cbind(`dying cells NTs`, `dying cells`) ~ condition, family = "binomial", data = rbind(data_p_GLG_25, data_amp_30))
+data_pglg_amp <- rbind(data_p_GLG_25, data_amp_30) %>%
+  mutate(condition = factor(condition, levels = c("P-GLG","Amp500")))
+
+fit_pglg_amp <- glm(cbind(`dying cells NTs`, `dying cells`) ~ condition, family = "binomial", data = data_pglg_amp)
 
 summary(fit_pglg_amp)
+exp(confint(fit_pglg_amp))
 ```
 
 After P-GLG treatment, more NTs are created from dying cells than in Ampicilin (p < 0.001).
@@ -1019,7 +1048,8 @@ All the contrasts of `Spc, Cm` in the baseline (DNase-) condition against everyt
 data_S16d <- rbind(
   read_condition_sem_quantification("SEM", c("J","K"), condition = "SEM", rows_from = c(2,8,14), rows_to = c(4,11,15), file = "S16d Quantification of NTs in liquid medium.xlsx"),
   read_condition_sem_quantification("SIM", c("G","H"), condition = "SIM", rows_from = c(2,10,15), rows_to = c(7,11,21), file = "S16d Quantification of NTs in liquid medium.xlsx")
-)
+) %>%
+  mutate(condition = factor(condition, levels = c("SIM","SEM")))
 
 if(redo_plots) {
   data_S16d %>% group_by(condition, replicate) %>%
@@ -1046,7 +1076,9 @@ While the SIM condition has more NTs per cell, the difference is not significant
 data_S16h <- rbind(
   read_condition_sem_quantification("SEM", c("J","L"), condition = "SEM", rows_from = c(3,12,20), rows_to = c(7,15,26), file = "S16h Quantification of NTs on solid medium.xlsx", space = TRUE),
   read_condition_sem_quantification("SIM", c("J","L"), condition = "SIM", rows_from = c(4,7,10), rows_to = c(4,7,10), file = "S16h Quantification of NTs on solid medium.xlsx", space = TRUE)
-)
+) %>%
+  mutate(condition = factor(condition, levels = c("SIM","SEM")))
+
 
 if(redo_plots) {
   data_S16h %>% group_by(condition, replicate) %>%
@@ -1062,7 +1094,7 @@ For analysis with a generalized linear model, we need to regularize, as the SIM 
 ```{r}
 fit_S16h_reg <- glm(cbind(NTs + 1, Cells - NTs + 1) ~ condition, data = data_S16h, family = "binomial")
 summary(fit_S16h_reg)
-
+exp(confint(fit_S16h_reg))
 ```
 
 Under this regularization the difference is significant. To be sure let us also check with a Bayesian GLM:
