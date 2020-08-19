@@ -47,7 +47,9 @@ if(redo_plots && !dir.exists("figs")) {
 
 ```
 
-# Supplementary Figure 1 - NTs under SEM in varying genetic background
+# Supplementary Figure 1L - NTs under SEM in varying genetic background
+
+Let us recall the percentage of NTs as shown in the Figure as well as the absolute counts of NTs and cells examined:
 
 ```{r}
 read_single_sem_quantification <- function(sheet, replicate,  range, condition, file = "FigS1L_Sigmas KOs SEM quantification.xlsx", space = FALSE) {
@@ -82,7 +84,7 @@ if(redo_plots) {
   data_S1l %>% group_by(condition, replicate) %>%
     summarise(prop_NTs = sum(NTs) / sum(Cells), sumNTs = sum(NTs), sum_cells = sum(Cells), .groups = "drop") %>%
     group_by(condition) %>%
-    summarise(petc_NTs_mean = mean(prop_NTs) * 100, perc_NTs_SEM = sd(prop_NTs) / sqrt(n()) * 100, sumNTs = sum(sumNTs), sum_cells = sum(sum_cells), .groups = "drop")
+    summarise(perc_NTs_mean = mean(prop_NTs) * 100, perc_NTs_SEM = sd(prop_NTs) / sqrt(n()) * 100, sumNTs = sum(sumNTs), sum_cells = sum(sum_cells), .groups = "drop")
 }
 ```
 
@@ -116,7 +118,7 @@ summary(fit_S1l_stan, probs = c(0.025, 0.975))
 Once again, no differences can be deemed significant - however, the data also cannot rule out that the true differences are substantial as witnessed by the wide posterior credible intervals. Importantly, as discussed in [analysis for Supplementary Figure 6](#figS6), when a different microscopic technique was used the effect of the absence of $sigD$ on formation of NTs was significant.
 
 
-# Figure 1c - Spatial distribution of NTs
+# Figure 1C - Spatial distribution of NTs
 
 The counts of cells on various cell sections are:
 
@@ -327,7 +329,7 @@ Even after this restriction, the data are not conclusive (p > 0.1). We therefore
 
 There is good evidence that there are more dying cells and more cells with NTs  in the P-GLG condition (p < 0.001 and p = 0.04 respectively), but it is not clear whether a single dying cell is more likely to have NTs in the P-GLG condition.
 
-# Supplementary Figure 6 a,b - Frequency of NT formation in $\Delta sigD$ {#figS6}
+# Supplementary Figure 6 A,B - Frequency of NT formation in $\Delta sigD$ {#figS6}
 
 
 ```{r}
@@ -438,7 +440,7 @@ exp(confint(fit_sigD_NTs))
 
 With this regularization we can say that dying cells produced significantly more NTs than living cells (p = 0.03).
 
-# Supplementary Figure 6 d,e - Frequency of NT formation in $\Delta lytEF$
+# Supplementary Figure 6 D,E - Frequency of NT formation in $\Delta lytEF$
 
 Now we will do the same analysis as we did for $\Delta sigD$, but using data for $\Delta lytEF$. 
 
@@ -1078,7 +1080,7 @@ All the contrasts of `Spc, Cm` in the baseline (DNase-) condition against everyt
 
 # Supplementary Figure 16 - SIM and SEM
 
-## Supplementary Figure 16d
+## Supplementary Figure 16D
 ```{r}
 data_S16d <- rbind(
   read_condition_sem_quantification("SEM", c("J","K"), condition = "SEM", rows_from = c(2,8,14), rows_to = c(4,11,15), file = "S16d Quantification of NTs in liquid medium.xlsx"),
@@ -1105,7 +1107,7 @@ summary(fit_S16d)
 
 While the SIM condition has more NTs per cell, the difference is not significant.
 
-## Supplementary Figure 16h
+## Supplementary Figure 16H
 
 ```{r}
 data_S16h <- rbind(
