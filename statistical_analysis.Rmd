@@ -45,6 +45,8 @@ if(redo_plots && !dir.exists("figs")) {
   dir.create("figs")
 }
 
+source_file <- "Source data.xlsx"
+
 ```
 
 # Supplementary Figure 1l - NTs under SEM in varying genetic background
@@ -52,32 +54,34 @@ if(redo_plots && !dir.exists("figs")) {
 Let us recall the percentage of NTs as shown in the Figure as well as the absolute counts of NTs and cells examined:
 
 ```{r}
-read_single_sem_quantification <- function(sheet, replicate,  range, condition, file = "FigS1L_Sigmas KOs SEM quantification.xlsx", space = FALSE) {
+read_single_sem_quantification <- function(sheet, replicate,  range, condition, space = FALSE) {
   if(space) {
     col_types = c("numeric","skip", "numeric")
   } else {
     col_types = c("numeric","numeric")
   }
-  read_excel(file, sheet, range = range, col_names = c("Cells","NTs"), col_types = col_types) %>%
+  read_excel(source_file, sheet, range = range, col_names = c("Cells","NTs"), col_types = col_types) %>%
     mutate(condition = condition, replicate = replicate, field = 1:n())
 }
 
-read_condition_sem_quantification <- function(sheet, cols, rows_from, rows_to, condition = paste0("-",sheet), file = "FigS1L_Sigmas KOs SEM quantification.xlsx", space = FALSE) {
+read_condition_sem_quantification <- function(sheet, cols, rows_from, rows_to, condition, space = FALSE) {
   res <- list()
   for(i in 1:length(rows_from)) {
-    res[[i]] <- read_single_sem_quantification(file = file, sheet = sheet, replicate = paste0("E",i), range = 
+    res[[i]] <- read_single_sem_quantification(sheet = sheet, replicate = paste0("E",i), range = 
                                                  paste0(cols[1],rows_from[i],":",cols[2], rows_to[i]), condition = condition,
                                                space = space)
   }
   do.call(rbind, res)
 }
 
+s1lsheet <- "Fig.S1 chart l"
+
 data_S1l <- rbind(
-  read_condition_sem_quantification("SigD", c("G","H"), rows_from = c(2,19,25,28), rows_to = c(4,19,25,29)),
-  read_condition_sem_quantification("SigI", c("H","I"), rows_from = c(2,19,34,50), rows_to = c(4,20,36,51)),
-  read_condition_sem_quantification("7ECF", c("H","I"), rows_from = c(2,19,34), rows_to = c(4,22,34)),
-  read_condition_sem_quantification("SigB", c("H","I"), rows_from = c(2,19), rows_to = c(4,21)),
-  read_condition_sem_quantification("SEM", c("J","K"), condition = "-hag", rows_from = c(2,8,14), rows_to = c(4,11,15), file = "S16d Quantification of NTs in liquid medium.xlsx")
+  read_condition_sem_quantification(s1lsheet, c("AS","AT"), rows_from = c(2,7,9,11), rows_to = c(4,7,9,12), condition = "-SigD"),
+  read_condition_sem_quantification(s1lsheet, c("AB","AC"), rows_from = c(2,7,11,16), rows_to = c(4,8,13,17), condition = "-SigI"),
+  read_condition_sem_quantification(s1lsheet, c("S","T"), rows_from = c(2,7,14), rows_to = c(4,10,14), condition = "-7ECF"),
+  read_condition_sem_quantification(s1lsheet, c("AK","AL"), rows_from = c(2,7), rows_to = c(4,9), condition = "-SigB"),
+  read_condition_sem_quantification(s1lsheet, c("J","K"), rows_from = c(2,8,14), rows_to = c(4,11,15), condition = "-hag")
 )  
 
 if(redo_plots) {
@@ -143,8 +147,8 @@ Supposing the distribution of NTs over the surface of the cell is uniform, given
 # Figure 2 - GLG vs. P-GLG
 
 ```{r}
-read_cell_count_data <- function(file, sheet, prefix) {
-  readxl::read_excel(file, sheet = sheet, range = "F1:V4", 
+read_cell_count_data <- function(sheet, prefix) {
+  readxl::read_excel(source_file, sheet = sheet, range = "F1:V4", 
                           col_types = c("text", rep(c("numeric", "skip"), times = 8))) %>%
     rename(Replicate = 1) %>%
     pivot_longer(starts_with(prefix), names_prefix = prefix, names_sep = " t=", names_to = c("category", "time"), values_to = "count") %>%
@@ -156,8 +160,8 @@ read_cell_count_data <- function(file, sheet, prefix) {
            )
 }
 
-glg <- read_cell_count_data("Fig.2 chart b", prefix = "Wt ", file = "Fig. 2_Primary data_OB.xlsx") %>% mutate(condition = "GLG")
-p_glg <- read_cell_count_data("Fig.2 chart c", prefix = "Wt ", file = "Fig. 2_Primary data_OB.xlsx") %>% mutate(condition = "P-GLG")
+glg <- read_cell_count_data("Fig.2 chart b", prefix = "Wt ") %>% mutate(condition = "GLG")
+p_glg <- read_cell_count_data("Fig.2 chart c", prefix = "Wt ") %>% mutate(condition = "P-GLG")
 
 fig2_data <- rbind(glg, p_glg)
 ```
@@ -333,7 +337,7 @@ There is good evidence that there are more dying cells and more cells with NTs  
 
 
 ```{r}
-data_S6ab <- read_cell_count_data("Fig. S6_Primary data_OB.xlsx", sheet = "Fig S6 chart ab", prefix = "SigD ") %>%
+data_S6ab <- read_cell_count_data(sheet = "Fig S6 chart ab", prefix = "SigD ") %>%
   mutate(condition = "-SigD P-GLG")
 
 #Recreate figures S6a,b to check if the data were loaded correctly:
@@ -446,13 +450,13 @@ Now we will do the same analysis as we did for $\Delta sigD$, but using data for
 
 ```{r}
 
-data_S6de <- read_cell_count_data("Fig. S6_Primary data_OB.xlsx", sheet = "Fig S6 chart de", prefix = "LytEF ") %>% mutate(condition = "-lytEF P-GLG")
+data_S6de <- read_cell_count_data(sheet = "Fig S6 chart de", prefix = "LytEF ") %>% mutate(condition = "-lytEF P-GLG")
 
 #Recreate figures S6d,e to check if the data were loaded correctly.
 if(redo_plots) {
   figS6d <- plot_cell_count_data_alive(data_S6de, NULL) + expand_limits(y = 1)
   figS6e <- plot_cell_count_data_NTs(data_S6de, facet_wrap(~alive_string), group = paste0(alive_string, time), breaks = seq(0,3.5, by = 0.5), limits = c(0,3.5)) 
-  figS6d + figS6e
+  print(figS6d + figS6e)
   
   ggsave("figs/figS6d.pdf", figS6d, device = cairo_pdf, width = 3.2, height = 4)
   ggsave("figs/figS6e.pdf", figS6e, device = cairo_pdf, width = 5.5, height = 4)
@@ -562,8 +566,8 @@ With this regularization we can say that dying cells produced signicantly more N
 In the following, we need to work on the log scale for better visualisation, however the data contain conditions with 0 transformations. To handle this data easily, we add 1 transformation to all conditions.
 
 ```{r}
-read_dnase_subset <- function(file, sheet, range, condition) {
-    readxl::read_excel(file, sheet = sheet, range = range,
+read_dnase_subset <- function(sheet, range, condition) {
+    readxl::read_excel(source_file, sheet = sheet, range = range,
                      col_types = c("text", "numeric", "skip","numeric", "skip", "numeric"), 
                      col_names = c("replicate", "baseline", "dnase", "recipients")) %>% 
     mutate(condition = condition)
@@ -571,7 +575,7 @@ read_dnase_subset <- function(file, sheet, range, condition) {
 }
 
 read_fig4_subset <- function(range, condition) {
-  read_dnase_subset(file = "Fig. 4_Primary data_OB.xlsx", sheet = "Fig.4 chart b", range = range, condition = condition)
+  read_dnase_subset(sheet = "Fig.4 chart b", range = range, condition = condition)
 }
 
 fig4_data <- rbind(
@@ -603,7 +607,8 @@ if(redo_plots) {
       has_transformations = any(has_trans_orig),
       height = if_else(has_transformations, mean(ratio_100) - bar_base, 0),
       ymax = if_else(has_transformations, mean(log(ratio_100)), log(bar_base)),
-      ratio_100 = exp(ymax)
+      ratio_100 = exp(ymax),
+      .groups = "drop"
       )
 
   fig4b <-  fig4_data %>% 
@@ -654,7 +659,7 @@ Otherwise all p < 0.001.
 ## $comK$ expression.
 
 ```{r}
-data_fig4c <- readxl::read_excel("Fig. 4_Primary data_OB.xlsx", sheet = "Fig.4 chart c", range = "C2:G4",
+data_fig4c <- readxl::read_excel(source_file, sheet = "Fig.4 chart c", range = "C2:G4",
                                  col_names = c("replicate","wt","-sigD", "Phs-comK", "-comK")) %>%
   pivot_longer(!one_of("replicate"), names_to = "condition", values_to = "relative_expression") %>%
   mutate(condition = factor(condition, levels = c("wt","-sigD","Phs-comK", "-comK") ))
@@ -732,8 +737,7 @@ The transfer was quantitatively correlated with the expression of the comK gene 
 
 ```{r}
 read_single_receptive_field <- function(sheet, row, column) {
-  file <- "Fig.S8_9_11_12_Primary data_OB.xlsx"
-  
+
   col_num_to_letter <- function(x) {
     if(x > 26) {
       if(x > 26*26) {
@@ -760,7 +764,7 @@ read_single_receptive_field <- function(sheet, row, column) {
   
   range_title <- to_range(start_col_num, start_row, start_col_num, start_row + 2)
   
-  title_data <- readxl::read_excel(file, sheet = sheet, range = range_title, col_names = "data")
+  title_data <- readxl::read_excel(source_file, sheet = sheet, range = range_title, col_names = "data")
   condition <- title_data$data[1]
   replicate_field <- title_data$data[2]
   replicate_field_split <- str_split(replicate_field, " ", simplify = TRUE)
@@ -769,7 +773,7 @@ read_single_receptive_field <- function(sheet, row, column) {
   
   main_range <- to_range(start_col_num, start_row + 3,end_col_num, end_row)
   
-  readxl::read_excel(file, sheet = sheet, range = main_range, col_names = c("category", "modifier", paste0("time", c(0, 30, 60, 90))),
+  readxl::read_excel(source_file, sheet = sheet, range = main_range, col_names = c("category", "modifier", paste0("time", c(0, 30, 60, 90))),
                      col_types = c("text", "text", rep("numeric", 4))) %>%
     pivot_longer(starts_with("time"), names_to = "time", names_prefix = "time", values_to = "count") %>%
     mutate(category = paste(trimws(category), trimws(replace_na(modifier, ""))), condition = condition, field = field, replicate = replicate) %>% 
@@ -792,10 +796,10 @@ read_all_receptive_fields <- function(sheet, fields_per_row) {
 }
 
 data_S8_12 <- rbind(
-  read_all_receptive_fields("Fig.S8 charts", c(3,3,3)),
-  read_all_receptive_fields("Fig.S9 charts", c(5,5,5)),
-  read_all_receptive_fields("Fig.S11 charts", c(2,2,2)),
-  read_all_receptive_fields("Fig.S12 charts", c(3,2,2))
+  read_all_receptive_fields("Fig.S8 charts bc", c(3,3,3)),
+  read_all_receptive_fields("Fig.S9 charts bc", c(5,5,5)),
+  read_all_receptive_fields("Fig.S11 charts bc", c(2,2,2)),
+  read_all_receptive_fields("Fig.S12 charts bc", c(3,2,2))
 )  %>%
   mutate(category = factor(trimws(category), levels = c("Live cells", "Dying cells", "Live cells NTs", "Dying cells NTs"), labels = c("live cells", "dying cells", "live cells NTs", "dying cells NTs" )),
          condition = factor(condition, levels = c("Empty LB", "Amp500", "Cm5", "Rif")))
@@ -809,7 +813,7 @@ if(redo_plots) {
   data_S8_12 %>% 
     filter(category == "live cells" | category == "dying cells") %>%
     group_by(condition) %>%
-    summarise(total_cells = sum(count))
+    summarise(total_cells = sum(count), .groups = "drop")
 
 
   data_S8_12 %>% 
@@ -1012,7 +1016,7 @@ The distribution of NTs is notably different from that of wild type (p < 0.001).
 
 ```{r}
 read_figS14_subset <- function(range, condition) {
-  read_dnase_subset(file = "Fig.S14_Primary data_OB.xlsx", sheet = "Fig.S14 chart c", range = range, condition = condition)
+  read_dnase_subset(sheet = "Fig.S14 chart c", range = range, condition = condition)
 }
 
 figS14_data <- rbind(
@@ -1041,7 +1045,8 @@ if(redo_plots) {
       has_transformations = any(has_trans_orig),
       height = if_else(has_transformations, mean(ratio_100) - bar_base, 0),
       ymax = if_else(has_transformations, mean(log(ratio_100)), log(bar_base)),
-      ratio_100 = exp(ymax)
+      ratio_100 = exp(ymax),
+      .groups = "drop"
       )
   
   #my_fun <- function(x) { mean( }
@@ -1083,8 +1088,8 @@ All the contrasts of `Spc, Cm` in the baseline (DNase-) condition against everyt
 ## Supplementary Figure 16d
 ```{r}
 data_S16d <- rbind(
-  read_condition_sem_quantification("SEM", c("J","K"), condition = "SEM", rows_from = c(2,8,14), rows_to = c(4,11,15), file = "S16d Quantification of NTs in liquid medium.xlsx"),
-  read_condition_sem_quantification("SIM", c("G","H"), condition = "SIM", rows_from = c(2,10,15), rows_to = c(7,11,21), file = "S16d Quantification of NTs in liquid medium.xlsx")
+  read_condition_sem_quantification(sheet = "Fig.S16 chart d", c("S","T"), condition = "SEM", rows_from = c(2,8,14), rows_to = c(4,11,15)),
+  read_condition_sem_quantification(sheet = "Fig.S16 chart d", c("G","H"), condition = "SIM", rows_from = c(2,10,15), rows_to = c(7,11,21))
 ) %>%
   mutate(condition = factor(condition, levels = c("SIM","SEM")))
 
@@ -1111,8 +1116,8 @@ While the SIM condition has more NTs per cell, the difference is not significant
 
 ```{r}
 data_S16h <- rbind(
-  read_condition_sem_quantification("SEM", c("J","L"), condition = "SEM", rows_from = c(3,12,20), rows_to = c(7,15,26), file = "S16h Quantification of NTs on solid medium.xlsx", space = TRUE),
-  read_condition_sem_quantification("SIM", c("J","L"), condition = "SIM", rows_from = c(4,7,10), rows_to = c(4,7,10), file = "S16h Quantification of NTs on solid medium.xlsx", space = TRUE)
+  read_condition_sem_quantification(sheet = "Fig.S16 chart h", c("W","Y"), condition = "SEM", rows_from = c(3,12,20), rows_to = c(7,15,26), space = TRUE),
+  read_condition_sem_quantification(sheet = "Fig.S16 chart h", c("J","L"), condition = "SIM", rows_from = c(4,7,10), rows_to = c(4,7,10), space = TRUE)
 ) %>%
   mutate(condition = factor(condition, levels = c("SIM","SEM")))
 
